@@ -1,109 +1,140 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { mapEmployeeDataFromSupabase } from '@/lib/employeeUtils';
-import { addLog } from '@/lib/activityLogService';
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { mapEmployeeDataFromSupabase } from "@/lib/employeeUtils";
+import { addLog } from "@/lib/activityLogService";
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
 };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  /* =========================
+   * INIT AUTH (1x only)
+   * ========================= */
   useEffect(() => {
-    const savedUserString = localStorage.getItem('currentUser');
-    if (savedUserString) {
-      try {
-        const savedUser = JSON.parse(savedUserString);
-        if (savedUser && savedUser.employeeData && typeof savedUser.employeeData === 'object') {
-          setUser(savedUser);
-        } else if (savedUser && savedUser.id && savedUser.role === 'employee') {
-          fetchAndSetUserData(savedUser.id, savedUser.role);
-        } else {
-          setUser(savedUser);
-        }
-      } catch (error) {
-        console.error("Failed to parse user from localStorage", error);
-        localStorage.removeItem('currentUser');
-      }
-    }
-    setLoading(false);
+    initAuth();
   }, []);
 
-  const fetchAndSetUserData = async (userId, userRole) => {
-    let userData = { id: userId, role: userRole };
-    if (userRole === 'employee') {
-      const { data: employeeData, error: employeeError } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', userId)
-        .single();
+  const initAuth = async () => {
+    try {
+      const cached = localStorage.getItem("currentUser");
+      if (!cached) return;
 
-      if (employeeError) {
-        console.error('Error fetching employee details on auth load:', employeeError);
-      } else if (employeeData) {
-        userData.employeeData = mapEmployeeDataFromSupabase(employeeData);
-        userData.name = employeeData.name;
-        userData.email = employeeData.email;
-      }
-    } else if (userRole === 'admin') {
-      const { data: adminData, error: adminError } = await supabase
-        .from('admins')
-        .select('id, name, email')
-        .eq('id', userId)
-        .single();
-      if (adminError) {
-        console.error('Error fetching admin details on auth load:', adminError);
-      } else if (adminData) {
-        userData.name = adminData.name;
-        userData.email = adminData.email;
-      }
+      const parsed = JSON.parse(cached);
+
+      // rebuild user dari DB (ANTI DATA STALE)
+      const rebuiltUser = await buildFullUser(parsed.id, parsed.role);
+      setUser(rebuiltUser);
+      localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
+    } catch (err) {
+      console.error("Auth init error:", err);
+      localStorage.removeItem("currentUser");
+      setUser(null);
+    } finally {
+      setLoading(false);
     }
-    setUser(userData);
-    localStorage.setItem('currentUser', JSON.stringify(userData));
   };
 
+  /* =========================
+   * BUILD FULL USER (KUNCI)
+   * ========================= */
+  const buildFullUser = async (userId, role) => {
+    if (role === "employee") {
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("id", userId)
+        .single();
 
-  const login = (userData) => {
-    let fullUserData;
-    if (userData.role === 'employee' && userData.employeeData) {
-      const mappedEmployeeData = mapEmployeeDataFromSupabase(userData.employeeData);
-      fullUserData = {
-        ...userData,
-        employeeData: mappedEmployeeData,
-        name: mappedEmployeeData.name,
+      if (error) throw error;
+
+      const isPM = await checkIsPM(userId);
+
+      return {
+        id: userId,
+        role,
+        isPM,
+        name: data.name,
+        email: data.email,
+        employeeData: mapEmployeeDataFromSupabase(data),
       };
-    } else {
-      fullUserData = userData;
     }
-    
-    setUser(fullUserData);
-    localStorage.setItem('currentUser', JSON.stringify(fullUserData));
+
+    if (role === "admin") {
+      const { data, error } = await supabase
+        .from("admins")
+        .select("id, name, email")
+        .eq("id", userId)
+        .single();
+
+      if (error) throw error;
+
+      return {
+        id: data.id,
+        role,
+        name: data.name,
+        email: data.email,
+      };
+    }
+
+    return null;
+  };
+
+  /* =========================
+   * LOGIN (SET SEKALI)
+   * ========================= */
+  const login = async (basicUser) => {
+    setLoading(true);
+
+    const fullUser = await buildFullUser(basicUser.id, basicUser.role);
+
+    setUser(fullUser);
+    localStorage.setItem("currentUser", JSON.stringify(fullUser));
 
     addLog({
-      userId: fullUserData.id,
-      userName: fullUserData.name || fullUserData.email,
-      userRole: fullUserData.role,
-      action: 'LOGIN',
-      targetType: 'SESSION',
-      details: { message: `User ${fullUserData.name || fullUserData.email} logged in successfully.` }
+      userId: fullUser.id,
+      userName: fullUser.name || fullUser.email,
+      userRole: fullUser.role,
+      action: "LOGIN",
+      targetType: "SESSION",
+      details: {
+        message: `User ${fullUser.name || fullUser.email} logged in.`,
+      },
     });
+
+    setLoading(false);
   };
 
+  /* =========================
+   * LOGOUT
+   * ========================= */
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('currentUser');
+    localStorage.removeItem("currentUser");
+  };
+
+  /* =========================
+   * CHECK PM
+   * ========================= */
+  const checkIsPM = async (employeeId) => {
+    const { count, error } = await supabase
+      .from("attendance_records")
+      .select("id", { count: "exact", head: true })
+      .eq("direct_pm_id", employeeId);
+
+    if (error) return false;
+    return count > 0;
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

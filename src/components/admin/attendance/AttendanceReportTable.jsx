@@ -8,6 +8,7 @@ const AttendanceReportTable = ({ records, loading }) => (
         <TableRow>
           <TableHead>Nama Karyawan</TableHead>
           <TableHead>NIK</TableHead>
+            <TableHead>Direct PM</TableHead>
           <TableHead>Tanggal</TableHead>
           <TableHead>Check In</TableHead>
           <TableHead>Check Out</TableHead>
@@ -33,8 +34,9 @@ const AttendanceReportTable = ({ records, loading }) => (
             }
             return (
               <TableRow key={record.id}>
-                <TableCell>{record.employees?.name || 'N/A'}</TableCell>
-                <TableCell>{record.employees?.nik || 'N/A'}</TableCell>
+                <TableCell>{record.employee?.name || 'N/A'}</TableCell>
+                <TableCell>{record.employee?.nik || 'N/A'}</TableCell>
+                <TableCell>{record.direct_pm?.name|| "N/A"}</TableCell>
                 <TableCell>{new Date(record.attendance_date).toLocaleDateString('id-ID', { timeZone: 'UTC' })}</TableCell>
                 <TableCell>{record.check_in_time ? new Date(record.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : '-'}</TableCell>
                 <TableCell>{record.check_out_time ? new Date(record.check_out_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }) : '-'}</TableCell>

@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +28,11 @@ import { LogIn, LogOut, CalendarClock, History, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 
+import CameraCapture from "@/components/employee/attendance/CameraCapture";
+import PMSelect from "@/components/employee/attendance/PMSelect";
+import { Label } from "recharts";
+import { compressImage } from "../lib/compressImage";
+
 const EmployeeAttendancePage = () => {
   const { user } = useAuth();
   const [todayAttendance, setTodayAttendance] = useState(null);
@@ -34,9 +45,36 @@ const EmployeeAttendancePage = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [attendanceChecked, setAttendanceChecked] = useState(false);
 
+  const [showCheckInFlow, setShowCheckInFlow] = useState(false);
+  const [selfieTaken, setSelfieTaken] = useState(false);
+  const [selfieBlob, setSelfieBlob] = useState(null);
+  const resetCheckInFlow = () => {
+    setShowCheckInFlow(false);
+    setSelfieTaken(false);
+    setSelectedPM(null);
+    setProjectText("");
+  };
+
+  const [pmList, setPmList] = useState([]);
+  const [selectedPM, setSelectedPM] = useState(null);
+  const [projectText, setProjectText] = useState("");
+  const [liveLocation, setLiveLocation] = useState(null);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+  const fetchPM = async () => {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("id, name")
+      .order("name");
+
+    if (!error) setPmList(data);
+  };
+
+  useEffect(() => {
+    fetchPM();
   }, []);
 
   const fetchTodayAttendance = useCallback(async () => {
@@ -87,30 +125,29 @@ const EmployeeAttendancePage = () => {
       setLoading((prev) => ({ ...prev, history: false }));
     }
   }, [user]);
-  const checkLocationPermission = async () => {
-    if (!navigator.permissions) return;
+  // const checkLocationPermission = async () => {
+  //   if (!navigator.permissions) return;
 
-    const result = await navigator.permissions.query({
-      name: "geolocation",
-    });
+  //   const result = await navigator.permissions.query({
+  //     name: "geolocation",
+  //   });
 
-    if (result.state === "granted") {
-      setLocationAllowed(true);
-    }
+  //   if (result.state === "granted") {
+  //     setLocationAllowed(true);
+  //   }
 
-    if (result.state === "denied") {
-      toast({
-        title: "Izin Lokasi Ditolak",
-        description: "Silakan aktifkan izin lokasi melalui pengaturan browser.",
-        variant: "destructive",
-      });
-    }
-  };
+  //   if (result.state === "denied") {
+  //     toast({
+  //       title: "Izin Lokasi Ditolak",
+  //       description: "Silakan aktifkan izin lokasi melalui pengaturan browser.",
+  //       variant: "destructive",
+  //     });
+  //   }
+  // };
 
   useEffect(() => {
     fetchTodayAttendance();
     fetchAttendanceHistory();
-    checkLocationPermission();
   }, [fetchTodayAttendance, fetchAttendanceHistory]);
   const getCurrentLiveLocationPayload = () => {
     if (!liveLocation) return null;
@@ -123,8 +160,51 @@ const EmployeeAttendancePage = () => {
       source: "watchPosition",
     };
   };
+  const normalizeName = (name) =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, "-");
 
-  const handleCheckIn = async () => {
+    const getTimeStr = () => {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}.${mm}`;
+};
+
+const uploadSelfie = async (blob) => {
+  if (!user?.name) throw new Error("Nama user tidak ada");
+  if (!(blob instanceof Blob)) throw new Error("Selfie bukan Blob");
+
+  const compressed = await compressImage(blob);
+  const dateStr = new Date().toISOString().split("T")[0];
+  const safeName = normalizeName(user.name);
+  const timeStr = getTimeStr();
+
+  const filePath = `${dateStr}/${safeName}-${timeStr}.jpg`;
+
+  const { error } = await supabase.storage
+    .from("photo.attendance")
+    .upload(filePath, compressed, {
+      contentType: "image/jpeg",
+      upsert: false,
+    });
+
+  if (error) {
+    console.error("Upload error:", error);
+    throw error;
+  }
+
+  return filePath;
+};
+
+
+  const handleCheckIn = async ({
+    direct_pm_id = null,
+    project = null,
+  } = {}) => {
     if (!user?.id) return;
 
     if (!liveLocation) {
@@ -139,8 +219,18 @@ const EmployeeAttendancePage = () => {
     setLoading((p) => ({ ...p, checkInOut: true }));
 
     try {
+      if (!selfieBlob) {
+        toast({
+          title: "Selfie belum diambil",
+          description: "Silakan ambil selfie terlebih dahulu",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const today = new Date().toISOString().split("T")[0];
       const checkInTime = new Date().toISOString();
+      const selfiePath = await uploadSelfie(selfieBlob);
 
       const locPayload = getCurrentLiveLocationPayload();
 
@@ -158,7 +248,10 @@ const EmployeeAttendancePage = () => {
             attendance_date: today,
             check_in_time: checkInTime,
             status_id: hadirStatus.id,
-            loc_checkin: locPayload, // ✅ JSONB
+            loc_checkin: locPayload,
+            direct_pm_id,
+            project,
+            attachment: selfiePath,
           },
           { onConflict: "employee_id, attendance_date" }
         )
@@ -175,6 +268,7 @@ const EmployeeAttendancePage = () => {
         description: "Lokasi diambil dari live GPS.",
         className: "bg-green-500 text-white",
       });
+      setSelfieBlob(null);
     } catch (err) {
       toast({
         title: "Gagal Check-In",
@@ -248,46 +342,52 @@ const EmployeeAttendancePage = () => {
   useEffect(() => {
     if (!attendanceChecked) return;
 
-    if (
-      (!todayAttendance || !todayAttendance.check_in_time) &&
-      !locationAllowed
-    ) {
+    if ((!todayAttendance || !todayAttendance.check_in_time) && !liveLocation) {
       setShowLocationModal(true);
     } else {
       setShowLocationModal(false);
     }
-  }, [attendanceChecked, todayAttendance, locationAllowed]);
+  }, [attendanceChecked, todayAttendance, liveLocation]);
 
   const [locationLoading, setLocationLoading] = useState(false);
 
   const requestLocation = () => {
+    setLocationLoading(true);
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLocation({
+        setLiveLocation({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
         });
+
         setLocationAllowed(true);
+        setShowLocationModal(false);
+        setLocationLoading(false);
       },
       (err) => {
+        setLocationLoading(false);
         toast({
           title: "Izin Lokasi Diperlukan",
-          description: "Aktifkan lokasi untuk absensi",
+          description:
+            err.code === 1
+              ? "Izin lokasi ditolak browser"
+              : "GPS tidak tersedia",
           variant: "destructive",
         });
       },
       {
-        enableHighAccuracy: false,
-        timeout: 5000,
-        maximumAge: 60000,
+        enableHighAccuracy: true, // 🔥 WAJIB MOBILE
+        timeout: 15000,
+        maximumAge: 0,
       }
     );
   };
-  const [liveLocation, setLiveLocation] = useState(null);
+
   const [liveAddress, setLiveAddress] = useState("-");
   const [watchId, setWatchId] = useState(null);
   useEffect(() => {
-    if (!locationAllowed || !navigator.geolocation) return;
+    if (!navigator.geolocation) return;
 
     const id = navigator.geolocation.watchPosition(
       async (pos) => {
@@ -295,7 +395,8 @@ const EmployeeAttendancePage = () => {
         const lon = pos.coords.longitude;
 
         setLiveLocation({ latitude: lat, longitude: lon });
-
+        setLocationAllowed(true);
+        setShowLocationModal(false);
         // Reverse geocoding (OpenStreetMap)
         try {
           const res = await fetch(
@@ -311,7 +412,7 @@ const EmployeeAttendancePage = () => {
         console.error("Live location error:", err);
       },
       {
-        enableHighAccuracy: false,
+        enableHighAccuracy: true,
         maximumAge: 10000,
         timeout: 5000,
       }
@@ -346,6 +447,84 @@ const EmployeeAttendancePage = () => {
   }, {});
 
   const monthlyData = Object.values(monthlySummary);
+  const checkInModal = useMemo(() => {
+    if (!showCheckInFlow) return null;
+
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center"
+        onClick={resetCheckInFlow}>
+        <Card
+          className="w-full max-w-md relative"
+          onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={resetCheckInFlow}
+            className="absolute right-3 top-3 text-gray-500 hover:text-red-500">
+            ✕
+          </button>
+
+          <CardHeader>
+            <CardTitle>Check-In</CardTitle>
+            <CardDescription>
+              Ambil selfie lalu isi data Project
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-3">
+            {/* ================= STEP 1: CAMERA ================= */}
+            {!selfieTaken ? (
+              <CameraCapture
+                onConfirm={(blob) => {
+                  setSelfieBlob(blob);
+                  setSelfieTaken(true);
+                }}
+              />
+            ) : (
+              <>
+                {/* ================= STEP 2: PM + PROJECT ================= */}
+                <PMSelect
+                  pmList={pmList}
+                  value={selectedPM}
+                  onChange={setSelectedPM}
+                />
+
+                <label className="text-sm font-semibold">Project</label>
+                <textarea
+                  className="w-full rounded-md dark:bg-background dark:text-gray-100 border p-2 text-sm"
+                  placeholder="Ex Telkom Akses / TBG / Indosat"
+                  value={projectText}
+                  onChange={(e) => setProjectText(e.target.value)}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mb-2 w-full"
+                  onClick={() => {
+                    setSelfieTaken(false);
+                    setSelectedPM(null);
+                    setProjectText("");
+                  }}>
+                  ← Kembali
+                </Button>
+                <Button
+                  disabled={!selectedPM || !projectText}
+                  onClick={async () => {
+                    await handleCheckIn({
+                      direct_pm_id: selectedPM,
+                      project: projectText,
+                    });
+                    resetCheckInFlow();
+                  }}
+                  className="w-full">
+                  Konfirmasi Check-In
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }, [showCheckInFlow, selfieTaken, selectedPM, projectText, pmList]);
 
   return (
     <Layout>
@@ -366,6 +545,7 @@ const EmployeeAttendancePage = () => {
           </Card>
         </div>
       )}
+      {checkInModal}
 
       <div className="space-y-8">
         <motion.div
@@ -401,7 +581,7 @@ const EmployeeAttendancePage = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-center text-5xl font-bold text-gray-700 dark:text-gray-300 p-4 rounded-lg bg-gray-100 dark:bg-gray-800">
-                {currentTime.toLocaleTimeString("id-ID", {
+                {currentTime.toLocaleTimeString("en-GB", {
                   hour: "2-digit",
                   minute: "2-digit",
                   second: "2-digit",
@@ -433,7 +613,7 @@ const EmployeeAttendancePage = () => {
                   )}
                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <Button
-                      onClick={handleCheckIn}
+                      onClick={() => setShowCheckInFlow(true)}
                       disabled={!canCheckIn || loading.checkInOut}
                       className="flex-1 bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white text-lg py-6">
                       <LogIn className="mr-2 h-5 w-5" />{" "}

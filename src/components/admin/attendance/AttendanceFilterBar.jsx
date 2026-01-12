@@ -15,7 +15,7 @@ const AttendanceFilterBar = ({
   employees,
   onClearFilters
 }) => (
-  <div className="flex flex-col md:flex-row gap-4 mb-4 items-end">
+  <div className="flex flex-col md:flex-row gap-4 mb-4 ">
     <div className="flex-1">
       <Label htmlFor="filterDate">Tanggal</Label>
       <Input id="filterDate" type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />

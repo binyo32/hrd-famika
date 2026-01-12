@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-const getNavLinks = (role) => {
+const getNavLinks = (role, isPM) => {
   if (role === "admin") {
     return [
       { to: "/admin/dashboard", icon: LayoutDashboard, text: "Dashboard" },
@@ -68,15 +68,32 @@ const getNavLinks = (role) => {
       { to: "/admin/activity-log", icon: History, text: "Log Aktivitas" },
     ];
   }
-  return [
+
+  // === EMPLOYEE BASE MENU ===
+  const links = [
     { to: "/employee/dashboard", icon: LayoutDashboard, text: "Dashboard" },
     { to: "/employee/attendance", icon: Fingerprint, text: "Absensi" },
-    { to: "/employee/leave-request", icon: Briefcase, text: "Pengajuan Cuti" },
+    {
+      to: "/employee/leave-request",
+      icon: Briefcase,
+      text: "Pengajuan Cuti / Dinas",
+    },
     { to: "/employee/profile", icon: UserCircle, text: "Profil Saya" },
   ];
+
+  // === TAMBAHAN KHUSUS PM ===
+  if (isPM) {
+    links.splice(2, 0, {
+      to: "/employee/pm-attendance",
+      icon: UserCheck,
+      text: "Absensi Tim",
+    });
+  }
+
+  return links;
 };
 
-const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse }) => {
+const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse ,  onLogout}) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -99,7 +116,7 @@ const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse }) => {
     navigate("/login");
   };
 
-  const navLinks = getNavLinks(user?.role);
+  const navLinks = getNavLinks(user?.role, user?.isPM);
 
   const sidebarVariants = {
     open: { x: 0 },
@@ -138,23 +155,21 @@ const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse }) => {
       </AnimatePresence>
 
       <motion.aside
-  variants={sidebarVariants}
-  initial="closed"
-  animate={isOpen ? "open" : "closed"}
-  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-  className={`
+        variants={sidebarVariants}
+        initial="closed"
+        animate={isOpen ? "open" : "closed"}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className={`
     fixed top-0 left-0 h-full
     w-[80vw] max-w-[320px]
     lg:w-64
-    ${isCollapsed ? "lg:w-20" : "lg:w-64"}
+    ${isCollapsed ? "lg:w-[80px]" : "lg:w-64"}
     bg-card text-card-foreground
     border-r border-border z-50
-    flex flex-col transition-all duration-300
+    flex flex-col transition-all duration-100
     lg:translate-x-0
     overflow-y-auto
-  `}
->
-
+  `}>
         {/* HEADER */}
         <div className="p-4 flex items-center justify-between ">
           {!isCollapsed && (
@@ -217,7 +232,7 @@ const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse }) => {
         <motion.div className="p-4 border-t" variants={navItemVariants}>
           <Button
             variant="ghost"
-            onClick={handleLogout}
+            onClick={onLogout}
             className="w-full justify-start space-x-3 text-red-500 hover:text-red-500 hover:bg-red-500/10">
             <LogOut className="h-5 w-5" />
             {!isCollapsed && <span>Logout</span>}
@@ -244,11 +259,12 @@ const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse }) => {
 
 const Header = ({
   toggleSidebar,
+  isDesktop,
+  onLogout,
   toggleCollapse,
   notifications,
   unreadCount,
   onOpenNotifications,
-  isDesktop,
 }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -258,8 +274,18 @@ const Header = ({
       user.role === "admin" ? "/admin/announcements" : "/employee/dashboard";
     navigate(path);
   };
+  const shouldAnimate = !isDesktop;
+
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 md:px-8 bg-card/80 backdrop-blur-lg border-b border-border">
+    <header
+      className="fixed top-0 inset-x-0 z-40
+  h-16
+  bg-card/80 backdrop-blur-lg
+  border-b border-border
+  flex items-center justify-between
+  px-4 md:px-8
+  lg:static lg:z-auto
+">
       <Button
         variant="ghost"
         size="icon"
@@ -335,15 +361,48 @@ const Header = ({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <div className="flex items-center space-x-3">
-          <div className="text-right hidden sm:block">
-            <p className="font-semibold text-sm">{user?.name || user?.email}</p>
-            <p className="text-xs text-muted-foreground capitalize">
-              {user?.role}
-            </p>
-          </div>
-          <UserCircle className="h-8 w-8 text-muted-foreground" />
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="rounded-full">
+              <UserCircle className="h-8 w-8 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="w-48 border-none">
+            {/* MOBILE ONLY */}
+            {!isDesktop && (
+              <>
+                <DropdownMenuItem
+                  onSelect={toggleSidebar}
+                  className="cursor-pointer gap-2">
+                  <Menu className="h-4 w-4" />
+                  Menu
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+
+            <DropdownMenuItem
+              onSelect={() =>
+                navigate(
+                  user.role === "admin" ? "/admin/profile" : "/employee/profile"
+                )
+              }
+              className="cursor-pointer gap-2">
+              <UserCircle className="h-4 w-4" />
+              Profile
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onSelect={onLogout}
+              className="cursor-pointer gap-2 text-red-600 focus:text-red-600">
+              <LogOut className="h-4 w-4" />
+              Logout
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );
@@ -365,6 +424,25 @@ const Layout = ({ children }) => {
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
   };
+const { logout } = useAuth();
+
+const handleLogout = async () => {
+  if (user) {
+    await addLog({
+      userId: user.id,
+      userName: user.name || user.email,
+      userRole: user.role,
+      action: "LOGOUT",
+      targetType: "SESSION",
+      details: {
+        message: `User ${user.name || user.email} logged out.`,
+      },
+    });
+  }
+
+  await logout();
+  navigate("/login");
+};
 
   const showToast = useCallback(
     (announcement) => {
@@ -506,30 +584,31 @@ const Layout = ({ children }) => {
   const sidebarVisible = isSidebarOpen || isDesktop;
 
   return (
-   <div className="flex min-h-screen bg-background overflow-x-hidden">
+    <div className="flex min-h-screen bg-background overflow-x-hidden">
       <Sidebar
         isOpen={isSidebarOpen || isDesktop}
         isCollapsed={isCollapsed}
         toggleSidebar={toggleSidebar}
         toggleCollapse={toggleCollapse}
+         onLogout={handleLogout}
       />
 
       <div
         className={`
-    flex-1 flex flex-col
+    flex-1 flex flex-col min-w-0
     transition-all duration-300
     ${isDesktop ? (isCollapsed ? "lg:pl-20" : "lg:pl-64") : ""}
   `}>
         <Header
           toggleSidebar={toggleSidebar}
-          toggleCollapse={toggleCollapse}
           isDesktop={isDesktop}
+          onLogout={handleLogout}
+          toggleCollapse={toggleCollapse}
           notifications={notifications}
           unreadCount={unreadCount}
           onOpenNotifications={handleOpenNotifications}
         />
-
-        <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto">
+        <main className="flex-1 min-w-0 mt-12 md:mt-1 p-4 sm:p-6 md:p-8 overflow-y-auto overflow-x-hidden">
           {children}
         </main>
       </div>

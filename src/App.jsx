@@ -1,32 +1,37 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ThemeProvider } from '@/contexts/ThemeContext';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { Toaster } from '@/components/ui/toaster';
-import LoginPage from '@/pages/LoginPage';
-import AdminDashboard from '@/pages/AdminDashboard';
-import EmployeeDashboard from '@/pages/EmployeeDashboard';
-import EmployeeManagement from '@/pages/EmployeeManagement';
-import EmployeeDetail from '@/pages/EmployeeDetail';
-import ProtectedRoute from '@/components/ProtectedRoute';
-import AdminAnnouncements from '@/pages/AdminAnnouncements';
-import EmployeeProfile from '@/pages/EmployeeProfile';
-import AdminLeaveManagement from '@/pages/AdminLeaveManagement';
-import EmployeeLeaveRequest from '@/pages/EmployeeLeaveRequest';
-import AdminOrgChart from '@/pages/AdminOrgChart';
-import AdminAttendanceManagement from '@/pages/AdminAttendanceManagement';
-import SuccessModal from '@/components/ui/SuccessModal'; 
-import { SuccessModalProvider, useSuccessModal } from '@/contexts/SuccessModalContext';
-import AdminSettings from '@/pages/AdminSettings';
-import AdminActivityLog from '@/pages/AdminActivityLog';
-import DirectManagerView from '@/pages/DirectManagerView';
-import AdminContractManagement from '@/pages/AdminContractManagement';
-import BirthdayCard from '@/components/admin/dashboard/BirthdayCard';
-import BirthdayDialog from '@/components/admin/dashboard/BirthdayDialog';
-import EmployeeAttendancePage from '@/pages/EmployeeAttendancePage';
+import React, { useState } from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { Toaster } from "@/components/ui/toaster";
+import LoginPage from "@/pages/LoginPage";
+import AdminDashboard from "@/pages/AdminDashboard";
+import EmployeeDashboard from "@/pages/EmployeeDashboard";
+import EmployeeManagement from "@/pages/EmployeeManagement";
+import EmployeeDetail from "@/pages/EmployeeDetail";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import AdminAnnouncements from "@/pages/AdminAnnouncements";
+import EmployeeProfile from "@/pages/EmployeeProfile";
+import AdminLeaveManagement from "@/pages/AdminLeaveManagement";
+import EmployeeLeaveRequest from "@/pages/EmployeeLeaveRequest";
+import AdminOrgChart from "@/pages/AdminOrgChart";
+import AdminAttendanceManagement from "@/pages/AdminAttendanceManagement";
+import SuccessModal from "@/components/ui/SuccessModal";
+import {
+  SuccessModalProvider,
+  useSuccessModal,
+} from "@/contexts/SuccessModalContext";
+import AdminSettings from "@/pages/AdminSettings";
+import AdminActivityLog from "@/pages/AdminActivityLog";
+import DirectManagerView from "@/pages/DirectManagerView";
+import AdminContractManagement from "@/pages/AdminContractManagement";
+import BirthdayCard from "@/components/admin/dashboard/BirthdayCard";
+import BirthdayDialog from "@/components/admin/dashboard/BirthdayDialog";
+import EmployeeAttendancePage from "@/pages/EmployeeAttendancePage";
+import TeamAttendancePage from "./pages/TeamAttemdancePage";
 
 function AppContent() {
-  const { successModalProps, showSuccessModal, hideSuccessModal } = useSuccessModal();
+  const { successModalProps, showSuccessModal, hideSuccessModal } =
+    useSuccessModal();
 
   return (
     <>
@@ -34,29 +39,29 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<LoginPage />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route 
-            path="/admin/dashboard" 
+          <Route
+            path="/admin/dashboard"
             element={
               <ProtectedRoute requiredRole="admin">
                 <AdminDashboard />
               </ProtectedRoute>
-            } 
+            }
           />
-          <Route 
-            path="/admin/employees" 
+          <Route
+            path="/admin/employees"
             element={
               <ProtectedRoute requiredRole="admin">
                 <EmployeeManagement />
               </ProtectedRoute>
-            } 
+            }
           />
-          <Route 
-            path="/admin/employees/:id" 
+          <Route
+            path="/admin/employees/:id"
             element={
               <ProtectedRoute requiredRole="admin">
                 <EmployeeDetail />
               </ProtectedRoute>
-            } 
+            }
           />
           <Route
             path="/admin/announcements"
@@ -74,7 +79,7 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-           <Route
+          <Route
             path="/admin/contract-management"
             element={
               <ProtectedRoute requiredRole="admin">
@@ -90,7 +95,7 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-           <Route
+          <Route
             path="/admin/direct-manager"
             element={
               <ProtectedRoute requiredRole="admin">
@@ -122,13 +127,13 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-          <Route 
-            path="/employee/dashboard" 
+          <Route
+            path="/employee/dashboard"
             element={
               <ProtectedRoute requiredRole="employee">
                 <EmployeeDashboard />
               </ProtectedRoute>
-            } 
+            }
           />
           <Route
             path="/employee/profile"
@@ -154,9 +159,17 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/employee/pm-attendance"
+            element={
+              <ProtectedRoute requiredRole="employee">
+                <TeamAttendancePage />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
         <Toaster />
-        <SuccessModal 
+        <SuccessModal
           isOpen={successModalProps.isOpen}
           onClose={hideSuccessModal}
           title={successModalProps.title}

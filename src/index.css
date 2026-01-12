@@ -132,3 +132,33 @@
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* ===== CHECK-IN TOOLTIP ===== */
+.leaflet-tooltip.tooltip-checkin {
+  background-color: #0046FF; /* blue-600 */
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+.leaflet-tooltip.tooltip-checkin::before {
+  border-top-color: #0046FF;
+}
+
+/* ===== CHECK-OUT TOOLTIP ===== */
+.leaflet-tooltip.tooltip-checkout {
+  background-color: #FF0000; /* red-600 */
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+.leaflet-tooltip.tooltip-checkout::before {
+  border-top-color: #FF0000;
+}

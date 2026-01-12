@@ -15,9 +15,10 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead>Tanggal</TableHead>
           <TableHead>Nama Karyawan</TableHead>
           <TableHead>NIK</TableHead>
-          <TableHead>Tanggal</TableHead>
+          <TableHead>Direct PM</TableHead>
           <TableHead>Check In</TableHead>
           <TableHead>Check Out</TableHead>
           <TableHead>Status</TableHead>
@@ -42,13 +43,14 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
         ) : (
           records.map((record) => (
             <TableRow key={record.id}>
-              <TableCell>{record.employees?.name || "N/A"}</TableCell>
-              <TableCell>{record.employees?.nik || "N/A"}</TableCell>
               <TableCell>
                 {new Date(record.attendance_date).toLocaleDateString("id-ID", {
                   timeZone: "UTC",
                 })}
               </TableCell>
+              <TableCell>{record.employee?.name || "N/A"}</TableCell>
+              <TableCell>{record.employee?.nik || "N/A"}</TableCell>
+              <TableCell>{record.direct_pm?.name|| "N/A"}</TableCell>
               <TableCell>
                 {record.check_in_time
                   ? new Date(record.check_in_time).toLocaleTimeString("id-ID", {
@@ -80,7 +82,7 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
               <TableCell className="space-y-1">
                 {record.loc_checkin && (
                   <a
-                    href={`https://www.google.com/maps?q=${record.loc_checkin.latitude},${record.loc_checkin.longitude}`}
+                    href={`https://www.google.com/maps?q=${record.loc_checkin.lat},${record.loc_checkin.lng}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block text-green-600 hover:underline">
@@ -90,7 +92,7 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
 
                 {record.loc_checkout && (
                   <a
-                    href={`https://www.google.com/maps?q=${record.loc_checkout.latitude},${record.loc_checkout.longitude}`}
+                    href={`https://www.google.com/maps?q=${record.loc_checkout.lat},${record.loc_checkout.lng}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block text-red-600 hover:underline">
