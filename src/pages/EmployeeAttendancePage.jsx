@@ -56,6 +56,7 @@ const EmployeeAttendancePage = () => {
   };
 
   const [pmList, setPmList] = useState([]);
+  const [pmLoading, setPmLoading] = useState(false);
   const [selectedPM, setSelectedPM] = useState(null);
   const [projectText, setProjectText] = useState("");
   const [liveLocation, setLiveLocation] = useState(null);
@@ -64,14 +65,19 @@ const EmployeeAttendancePage = () => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const fetchPM = async () => {
-    const { data, error } = await supabase
-      .from("employees")
-      .select("id, name")
-      .order("name");
+ const fetchPM = async (keyword = "") => {
+  setPmLoading(true);
 
-    if (!error) setPmList(data);
-  };
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id, name")
+    .ilike("name", `%${keyword}%`)
+    .order("name")
+    .limit(20); 
+
+  if (!error) setPmList(data ?? []);
+  setPmLoading(false);
+};
 
   useEffect(() => {
     fetchPM();
@@ -161,45 +167,44 @@ const EmployeeAttendancePage = () => {
     };
   };
   const normalizeName = (name) =>
-  name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, "-");
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, "-");
 
-    const getTimeStr = () => {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  return `${hh}.${mm}`;
-};
+  const getTimeStr = () => {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    return `${hh}.${mm}`;
+  };
 
-const uploadSelfie = async (blob) => {
-  if (!user?.name) throw new Error("Nama user tidak ada");
-  if (!(blob instanceof Blob)) throw new Error("Selfie bukan Blob");
+  const uploadSelfie = async (blob) => {
+    if (!user?.name) throw new Error("Nama user tidak ada");
+    if (!(blob instanceof Blob)) throw new Error("Selfie bukan Blob");
 
-  const compressed = await compressImage(blob);
-  const dateStr = new Date().toISOString().split("T")[0];
-  const safeName = normalizeName(user.name);
-  const timeStr = getTimeStr();
+    const compressed = await compressImage(blob);
+    const dateStr = new Date().toISOString().split("T")[0];
+    const safeName = normalizeName(user.name);
+    const timeStr = getTimeStr();
 
-  const filePath = `${dateStr}/${safeName}-${timeStr}.jpg`;
+    const filePath = `${dateStr}/${safeName}-${timeStr}.jpg`;
 
-  const { error } = await supabase.storage
-    .from("photo.attendance")
-    .upload(filePath, compressed, {
-      contentType: "image/jpeg",
-      upsert: false,
-    });
+    const { error } = await supabase.storage
+      .from("photo.attendance")
+      .upload(filePath, compressed, {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
 
-  if (error) {
-    console.error("Upload error:", error);
-    throw error;
-  }
+    if (error) {
+      console.error("Upload error:", error);
+      throw error;
+    }
 
-  return filePath;
-};
-
+    return filePath;
+  };
 
   const handleCheckIn = async ({
     direct_pm_id = null,
@@ -483,10 +488,13 @@ const uploadSelfie = async (blob) => {
               <>
                 {/* ================= STEP 2: PM + PROJECT ================= */}
                 <PMSelect
-                  pmList={pmList}
-                  value={selectedPM}
-                  onChange={setSelectedPM}
-                />
+  pmList={pmList}
+  value={selectedPM}
+  onChange={setSelectedPM}
+  onSearch={fetchPM}
+  loading={pmLoading}
+/>
+
 
                 <label className="text-sm font-semibold">Project</label>
                 <textarea

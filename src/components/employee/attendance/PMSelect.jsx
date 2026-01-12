@@ -1,62 +1,52 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 
-const PMSelect = ({ pmList, value, onChange }) => {
+const PMSelect = ({ pmList, value, onChange, onSearch, loading }) => {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
 
   const selectedPM = pmList.find((pm) => pm.id === value);
 
-  const filteredPM = useMemo(() => {
-    return pmList.filter((pm) =>
-      pm.name.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [search, pmList]);
+  // 🔥 debounce search
+  useEffect(() => {
+    const t = setTimeout(() => {
+      onSearch(search);
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [search]);
 
   return (
     <div className="relative mb-5">
-      <label htmlFor="pm-select">Pilih PM</label>
-      {/* Trigger */}
+      <label>Pilih PM</label>
+
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="
-          w-full rounded-md border px-3 py-2 text-sm text-left
-          bg-white text-gray-900 border-gray-300
-          dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700
-          focus:outline-none focus:ring-2 focus:ring-primary
-        ">
+        className="w-full rounded-md border px-3 py-2 text-sm text-left">
         {selectedPM ? selectedPM.name : "Pilih Direct PM"}
       </button>
 
       {open && (
-        <div
-          className="
-            absolute z-50 mt-1 w-full rounded-md border shadow-lg
-            bg-white border-gray-200
-            dark:bg-gray-900 dark:border-gray-700
-          ">
-          {/* Search */}
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-white dark:bg-background dark:text-white ">
           <input
             type="text"
-            placeholder="Cari PM..."
-            className="
-              w-full px-3 py-2 text-sm outline-none border-b
-              bg-white text-gray-900 border-gray-200
-              dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700
-              placeholder:text-gray-400 dark:placeholder:text-gray-500
-            "
+            placeholder="Cari nama PM..."
+            className="w-full px-3 py-2 text-sm border-b dark:bg-background dark:text-white"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
 
-          {/* List */}
           <ul className="max-h-48 overflow-auto">
-            {filteredPM.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
-                PM tidak ditemukan
+            {loading ? (
+              <li className="px-3 py-2 text-sm text-gray-400 dark:bg-background dark:text-white">
+                Mencari...
+              </li>
+            ) : pmList.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">
+                Data tidak ditemukan
               </li>
             ) : (
-              filteredPM.map((pm) => (
+              pmList.map((pm) => (
                 <li
                   key={pm.id}
                   onClick={() => {
@@ -64,11 +54,7 @@ const PMSelect = ({ pmList, value, onChange }) => {
                     setOpen(false);
                     setSearch("");
                   }}
-                  className="
-                    cursor-pointer px-3 py-2 text-sm
-                    text-gray-900 hover:bg-gray-100
-                    dark:text-gray-100 dark:hover:bg-gray-800
-                  ">
+                  className="cursor-pointer px-3 py-2 hover:bg-gray-100 dark:hover:bg-secondary-dark dark:bg-background dark:text-white">
                   {pm.name}
                 </li>
               ))
