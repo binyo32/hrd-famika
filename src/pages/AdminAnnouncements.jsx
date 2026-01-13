@@ -1,17 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import Layout from '@/components/Layout';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card';
-import { toast } from '@/components/ui/use-toast';
-import { supabase } from '@/lib/supabaseClient';
-import { Plus, Search, Megaphone } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '@/contexts/AuthContext';
-import { addLog } from '@/lib/activityLogService';
-import AnnouncementFormDialog from '@/components/admin/announcements/AnnouncementFormDialog';
-import AnnouncementCard from '@/components/admin/announcements/AnnouncementCard';
-import AnnouncementCreator from '@/components/admin/announcements/AnnouncementCreator';
+import React, { useState, useEffect, useCallback } from "react";
+import Layout from "@/components/Layout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardFooter,
+} from "@/components/ui/card";
+import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabaseClient";
+import { Plus, Search, Megaphone } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
+import { addLog } from "@/lib/activityLogService";
+import AnnouncementFormDialog from "@/components/admin/announcements/AnnouncementFormDialog";
+import AnnouncementCard from "@/components/admin/announcements/AnnouncementCard";
+import AnnouncementCreator from "@/components/admin/announcements/AnnouncementCreator";
+
+import { buildAnnouncementPath } from "@/lib/storageUtils";
 
 const AdminAnnouncements = () => {
   const { user } = useAuth();
@@ -19,14 +26,22 @@ const AdminAnnouncements = () => {
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [currentAnnouncement, setCurrentAnnouncement] = useState(null);
-  const [formData, setFormData] = useState({ title: '', content: '', audience: 'all' });
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isAudienceFeatureEnabled, setIsAudienceFeatureEnabled] = useState(null);
+  const [formData, setFormData] = useState({
+    title: "",
+    content: "",
+    audience: "all",
+  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isAudienceFeatureEnabled, setIsAudienceFeatureEnabled] =
+    useState(null);
 
   useEffect(() => {
     const checkAudienceFeature = async () => {
       try {
-        const { error } = await supabase.from('announcements').select('audience').limit(1);
+        const { error } = await supabase
+          .from("announcements")
+          .select("audience")
+          .limit(1);
         setIsAudienceFeatureEnabled(!error);
       } catch (e) {
         setIsAudienceFeatureEnabled(false);
@@ -38,19 +53,30 @@ const AdminAnnouncements = () => {
   const fetchAnnouncements = useCallback(async () => {
     if (isAudienceFeatureEnabled === null) return;
     setLoading(true);
-    
-    const columnsToSelect = isAudienceFeatureEnabled ? '*' : 'id, title, content, created_at, updated_at, author_name, author_role, liked_by';
+
+    const columnsToSelect = isAudienceFeatureEnabled
+      ? "*"
+      : "id, title, content, created_at, updated_at, author_name, attachment_url, author_role, liked_by";
 
     try {
-      let query = supabase.from('announcements').select(columnsToSelect).order('created_at', { ascending: false });
+      let query = supabase
+        .from("announcements")
+        .select(columnsToSelect)
+        .order("created_at", { ascending: false });
       if (searchTerm) {
-        query = query.or(`title.ilike.%${searchTerm}%,content.ilike.%${searchTerm}%`);
+        query = query.or(
+          `title.ilike.%${searchTerm}%,content.ilike.%${searchTerm}%`
+        );
       }
       const { data, error } = await query;
       if (error) throw error;
       setAnnouncements(data);
     } catch (error) {
-      toast({ title: "Error", description: "Gagal memuat pengumuman: " + error.message, variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Gagal memuat pengumuman: " + error.message,
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -60,39 +86,82 @@ const AdminAnnouncements = () => {
     fetchAnnouncements();
   }, [fetchAnnouncements]);
 
-  const handleSubmit = async (newFormData) => {
-    if (!newFormData.title || !newFormData.content) {
-      toast({ title: "Input Tidak Lengkap", description: "Judul dan isi pengumuman tidak boleh kosong.", variant: "destructive" });
+  const handleSubmit = async (formData, attachment) => {
+    if (!formData.title || !formData.content) {
+      toast({
+        title: "Input Tidak Lengkap",
+        description: "Judul dan isi pengumuman tidak boleh kosong.",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
-      let logAction;
-      let result;
-      const announcementData = {
-        title: newFormData.title,
-        content: newFormData.content,
-      };
+      let attachmentPath = currentAnnouncement?.attachment_url || null;
+      if (attachment) {
+        if (attachment.type !== "application/pdf") {
+          toast({
+            title: "File tidak valid",
+            description: "Hanya file PDF yang diperbolehkan",
+            variant: "destructive",
+          });
+          return;
+        }
 
-      if (isAudienceFeatureEnabled) {
-        announcementData.audience = newFormData.audience;
+        if (currentAnnouncement?.attachment_url) {
+          await supabase.storage
+            .from("attachment.announcement")
+            .remove([currentAnnouncement.attachment_url]);
+        }
+
+        attachmentPath = buildAnnouncementPath(formData.title);
+
+        const { error: uploadError } = await supabase.storage
+          .from("attachment.announcement")
+          .upload(attachmentPath, attachment, {
+            contentType: "application/pdf",
+            upsert: true,
+          });
+
+        if (uploadError) throw uploadError;
       }
 
+      const payload = {
+        title: formData.title,
+        content: formData.content,
+        audience: formData.audience,
+        attachment_url: attachmentPath,
+        updated_at: new Date().toISOString(),
+      };
+
+      let result;
+      let logAction;
+
       if (currentAnnouncement) {
-        logAction = 'UPDATE';
-        announcementData.updated_at = new Date().toISOString();
-        const { data, error } = await supabase.from('announcements').update(announcementData).eq('id', currentAnnouncement.id).select().single();
+        logAction = "UPDATE";
+        const { data, error } = await supabase
+          .from("announcements")
+          .update(payload)
+          .eq("id", currentAnnouncement.id)
+          .select()
+          .single();
         if (error) throw error;
         result = data;
-        toast({ title: "Berhasil!", description: "Pengumuman berhasil diperbarui." });
       } else {
-        logAction = 'CREATE';
-        announcementData.author_name = user?.name || 'Admin';
-        announcementData.author_role = user?.role || 'Administrator';
-        const { data, error } = await supabase.from('announcements').insert([announcementData]).select().single();
+        logAction = "CREATE";
+        const { data, error } = await supabase
+          .from("announcements")
+          .insert([
+            {
+              ...payload,
+              author_name: user?.name || "Admin",
+              author_role: user?.role || "Administrator",
+            },
+          ])
+          .select()
+          .single();
         if (error) throw error;
         result = data;
-        toast({ title: "Berhasil!", description: "Pengumuman baru berhasil ditambahkan." });
       }
 
       await addLog({
@@ -100,102 +169,140 @@ const AdminAnnouncements = () => {
         userName: user.name || user.email,
         userRole: user.role,
         action: logAction,
-        targetType: 'ANNOUNCEMENT',
+        targetType: "ANNOUNCEMENT",
         targetId: result.id,
         targetName: result.title,
       });
 
+      toast({ title: "Berhasil" });
       setIsFormOpen(false);
       setCurrentAnnouncement(null);
       fetchAnnouncements();
     } catch (error) {
-      toast({ title: "Error", description: "Gagal menyimpan pengumuman: " + error.message, variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 
   const handleEdit = (announcement) => {
     setCurrentAnnouncement(announcement);
-    setFormData({ title: announcement.title, content: announcement.content, audience: announcement.audience || 'all' });
+    setFormData({
+      title: announcement.title,
+      content: announcement.content,
+      audience: announcement.audience || "all",
+    });
     setIsFormOpen(true);
   };
 
   const handleDelete = async (announcement) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus pengumuman ini?")) {
       try {
-        const { error } = await supabase.from('announcements').delete().eq('id', announcement.id);
+        if (announcement.attachment_url) {
+          await supabase.storage
+            .from("attachment.announcement")
+            .remove([announcement.attachment_url]);
+        }
+        const { error } = await supabase
+          .from("announcements")
+          .delete()
+          .eq("id", announcement.id);
         if (error) throw error;
 
         await addLog({
           userId: user.id,
           userName: user.name || user.email,
           userRole: user.role,
-          action: 'DELETE',
-          targetType: 'ANNOUNCEMENT',
+          action: "DELETE",
+          targetType: "ANNOUNCEMENT",
           targetId: announcement.id,
           targetName: announcement.title,
         });
 
-        toast({ title: "Berhasil!", description: "Pengumuman berhasil dihapus." });
+        toast({
+          title: "Berhasil!",
+          description: "Pengumuman berhasil dihapus.",
+        });
         fetchAnnouncements();
       } catch (error) {
-        toast({ title: "Error", description: "Gagal menghapus pengumuman: " + error.message, variant: "destructive" });
+        toast({
+          title: "Error",
+          description: "Gagal menghapus pengumuman: " + error.message,
+          variant: "destructive",
+        });
       }
     }
   };
 
   const openAddForm = () => {
     setCurrentAnnouncement(null);
-    setFormData({ title: '', content: '', audience: 'all' });
+    setFormData({ title: "", content: "", audience: "all" });
     setIsFormOpen(true);
   };
 
   const handleLikeToggle = async (announcementId) => {
     if (!user || !user.id) {
-      toast({ title: "Aksi Gagal", description: "Anda harus login untuk menyukai pengumuman.", variant: "destructive" });
+      toast({
+        title: "Aksi Gagal",
+        description: "Anda harus login untuk menyukai pengumuman.",
+        variant: "destructive",
+      });
       return;
     }
 
     const originalAnnouncements = [...announcements];
-    const announcement = announcements.find(a => a.id === announcementId);
+    const announcement = announcements.find((a) => a.id === announcementId);
     if (!announcement) return;
 
-    const likedBy = Array.isArray(announcement.liked_by) ? [...announcement.liked_by] : [];
+    const likedBy = Array.isArray(announcement.liked_by)
+      ? [...announcement.liked_by]
+      : [];
     const userHasLiked = likedBy.includes(user.id);
-    const newLikedBy = userHasLiked ? likedBy.filter(id => id !== user.id) : [...likedBy, user.id];
+    const newLikedBy = userHasLiked
+      ? likedBy.filter((id) => id !== user.id)
+      : [...likedBy, user.id];
 
-    setAnnouncements(prev =>
-      prev.map(a =>
-        a.id === announcementId
-          ? { ...a, liked_by: newLikedBy }
-          : a
+    setAnnouncements((prev) =>
+      prev.map((a) =>
+        a.id === announcementId ? { ...a, liked_by: newLikedBy } : a
       )
     );
 
     try {
       const { error } = await supabase
-        .from('announcements')
+        .from("announcements")
         .update({ liked_by: newLikedBy })
-        .eq('id', announcementId);
+        .eq("id", announcementId);
 
       if (error) {
         setAnnouncements(originalAnnouncements);
-        toast({ title: "Error", description: "Gagal memperbarui suka. Pastikan kolom 'liked_by' (tipe jsonb) ada di tabel announcements.", variant: "destructive" });
+        toast({
+          title: "Error",
+          description:
+            "Gagal memperbarui suka. Pastikan kolom 'liked_by' (tipe jsonb) ada di tabel announcements.",
+          variant: "destructive",
+        });
         console.error("Like error:", error);
       }
     } catch (error) {
       setAnnouncements(originalAnnouncements);
-      toast({ title: "Error", description: "Terjadi kesalahan.", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Terjadi kesalahan.",
+        variant: "destructive",
+      });
     }
   };
 
   return (
     <Layout>
       <div className="max-w-3xl mx-auto space-y-8">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0"
-        >
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
           <div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               Feed Pengumuman
@@ -207,14 +314,13 @@ const AdminAnnouncements = () => {
         </motion.div>
 
         <AnnouncementCreator onOpenAddForm={openAddForm} />
-        
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="relative"
-        >
-          <Input 
+          className="relative">
+          <Input
             placeholder="Cari pengumuman..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -245,14 +351,17 @@ const AdminAnnouncements = () => {
                 ))}
               </div>
             ) : (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-16"
-              >
+                className="text-center py-16">
                 <Megaphone className="h-20 w-20 mx-auto text-muted-foreground mb-6" />
-                <h3 className="text-2xl font-semibold">Feed Pengumuman Kosong</h3>
-                <p className="text-muted-foreground mt-2">Jadilah yang pertama memposting pengumuman!</p>
+                <h3 className="text-2xl font-semibold">
+                  Feed Pengumuman Kosong
+                </h3>
+                <p className="text-muted-foreground mt-2">
+                  Jadilah yang pertama memposting pengumuman!
+                </p>
               </motion.div>
             )}
           </AnimatePresence>
