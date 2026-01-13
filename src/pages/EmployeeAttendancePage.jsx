@@ -3,7 +3,6 @@ import React, {
   useEffect,
   useCallback,
   useRef,
-  useMemo,
 } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -27,11 +26,10 @@ import { supabase } from "@/lib/supabaseClient";
 import { LogIn, LogOut, CalendarClock, History, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
-
-import CameraCapture from "@/components/employee/attendance/CameraCapture";
-import PMSelect from "@/components/employee/attendance/PMSelect";
-import { Label } from "recharts";
 import { compressImage } from "../lib/compressImage";
+import LocationPermissionDialog from "../components/employee/LocationPermissionDialog";
+import CheckInDialog from "../components/employee/CheckInDialog";
+import ConfirmCheckoutDialog from "../components/employee/ConfirmCheckoutDialog";
 
 const EmployeeAttendancePage = () => {
   const { user } = useAuth();
@@ -60,24 +58,26 @@ const EmployeeAttendancePage = () => {
   const [selectedPM, setSelectedPM] = useState(null);
   const [projectText, setProjectText] = useState("");
   const [liveLocation, setLiveLocation] = useState(null);
+  const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
+
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
- const fetchPM = async (keyword = "") => {
-  setPmLoading(true);
+  const fetchPM = async (keyword = "") => {
+    setPmLoading(true);
 
-  const { data, error } = await supabase
-    .from("employees")
-    .select("id, name")
-    .ilike("name", `%${keyword}%`)
-    .order("name")
-    .limit(20); 
+    const { data, error } = await supabase
+      .from("employees")
+      .select("id, name")
+      .ilike("name", `%${keyword}%`)
+      .order("name")
+      .limit(20);
 
-  if (!error) setPmList(data ?? []);
-  setPmLoading(false);
-};
+    if (!error) setPmList(data ?? []);
+    setPmLoading(false);
+  };
 
   useEffect(() => {
     fetchPM();
@@ -131,25 +131,6 @@ const EmployeeAttendancePage = () => {
       setLoading((prev) => ({ ...prev, history: false }));
     }
   }, [user]);
-  // const checkLocationPermission = async () => {
-  //   if (!navigator.permissions) return;
-
-  //   const result = await navigator.permissions.query({
-  //     name: "geolocation",
-  //   });
-
-  //   if (result.state === "granted") {
-  //     setLocationAllowed(true);
-  //   }
-
-  //   if (result.state === "denied") {
-  //     toast({
-  //       title: "Izin Lokasi Ditolak",
-  //       description: "Silakan aktifkan izin lokasi melalui pengaturan browser.",
-  //       variant: "destructive",
-  //     });
-  //   }
-  // };
 
   useEffect(() => {
     fetchTodayAttendance();
@@ -323,6 +304,7 @@ const EmployeeAttendancePage = () => {
         description: "Lokasi diambil dari live GPS.",
         className: "bg-blue-500 text-white",
       });
+      setShowCheckoutConfirm(false);
     } catch (err) {
       toast({
         title: "Gagal Check-Out",
@@ -382,7 +364,7 @@ const EmployeeAttendancePage = () => {
         });
       },
       {
-        enableHighAccuracy: true, // 🔥 WAJIB MOBILE
+        enableHighAccuracy: true,
         timeout: 15000,
         maximumAge: 0,
       }
@@ -452,108 +434,45 @@ const EmployeeAttendancePage = () => {
   }, {});
 
   const monthlyData = Object.values(monthlySummary);
-  const checkInModal = useMemo(() => {
-    if (!showCheckInFlow) return null;
-
-    return (
-      <div
-        className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center"
-        onClick={resetCheckInFlow}>
-        <Card
-          className="w-full max-w-md relative"
-          onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={resetCheckInFlow}
-            className="absolute right-3 top-3 text-gray-500 hover:text-red-500">
-            ✕
-          </button>
-
-          <CardHeader>
-            <CardTitle>Check-In</CardTitle>
-            <CardDescription>
-              Ambil selfie lalu isi data Project
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-3">
-            {/* ================= STEP 1: CAMERA ================= */}
-            {!selfieTaken ? (
-              <CameraCapture
-                onConfirm={(blob) => {
-                  setSelfieBlob(blob);
-                  setSelfieTaken(true);
-                }}
-              />
-            ) : (
-              <>
-                {/* ================= STEP 2: PM + PROJECT ================= */}
-                <PMSelect
-  pmList={pmList}
-  value={selectedPM}
-  onChange={setSelectedPM}
-  onSearch={fetchPM}
-  loading={pmLoading}
-/>
-
-
-                <label className="text-sm font-semibold">Project</label>
-                <textarea
-                  className="w-full rounded-md dark:bg-background dark:text-gray-100 border p-2 text-sm"
-                  placeholder="Ex Telkom Akses / TBG / Indosat"
-                  value={projectText}
-                  onChange={(e) => setProjectText(e.target.value)}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="mb-2 w-full"
-                  onClick={() => {
-                    setSelfieTaken(false);
-                    setSelectedPM(null);
-                    setProjectText("");
-                  }}>
-                  ← Kembali
-                </Button>
-                <Button
-                  disabled={!selectedPM || !projectText}
-                  onClick={async () => {
-                    await handleCheckIn({
-                      direct_pm_id: selectedPM,
-                      project: projectText,
-                    });
-                    resetCheckInFlow();
-                  }}
-                  className="w-full">
-                  Konfirmasi Check-In
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }, [showCheckInFlow, selfieTaken, selectedPM, projectText, pmList]);
-
+ 
   return (
     <Layout>
       {showLocationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Izin Lokasi</CardTitle>
-              <CardDescription>
-                Aplikasi membutuhkan akses lokasi untuk mencatat absensi Anda
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <Button onClick={requestLocation} disabled={locationLoading}>
-                {locationLoading ? "Mengambil lokasi..." : "Izinkan Lokasi"}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        <LocationPermissionDialog
+          open={showLocationModal}
+          loading={locationLoading}
+          onAllow={requestLocation}
+        />
       )}
-      {checkInModal}
+      <CheckInDialog
+        open={showCheckInFlow}
+        onClose={resetCheckInFlow}
+        selfieTaken={selfieTaken}
+        setSelfieTaken={setSelfieTaken}
+        setSelfieBlob={setSelfieBlob}
+        pmList={pmList}
+        pmLoading={pmLoading}
+        selectedPM={selectedPM}
+        setSelectedPM={setSelectedPM}
+        projectText={projectText}
+        setProjectText={setProjectText}
+        onSearchPM={fetchPM}
+        onConfirm={async () => {
+          await handleCheckIn({
+            direct_pm_id: selectedPM,
+            project: projectText,
+          });
+          resetCheckInFlow();
+        }}
+      />
+      {showCheckoutConfirm && (
+        <ConfirmCheckoutDialog
+          open={showCheckoutConfirm}
+          onCancel={() => setShowCheckoutConfirm(false)}
+          onConfirm={handleCheckOut}
+          loading={loading.checkInOut}
+        />
+      )}
 
       <div className="space-y-8">
         <motion.div
@@ -630,7 +549,7 @@ const EmployeeAttendancePage = () => {
                         : "Check In"}
                     </Button>
                     <Button
-                      onClick={handleCheckOut}
+                      onClick={() => setShowCheckoutConfirm(true)}
                       disabled={!canCheckOut || loading.checkInOut}
                       className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-lg py-6">
                       <LogOut className="mr-2 h-5 w-5" />{" "}
@@ -755,7 +674,6 @@ const EmployeeAttendancePage = () => {
                 )}
               </div>
 
-              {/* ================= DESKTOP VIEW ================= */}
               <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
