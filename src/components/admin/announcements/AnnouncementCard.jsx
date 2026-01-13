@@ -43,7 +43,7 @@ const AnnouncementCard = ({
     toast({
       title: "🚧 Fitur Belum Tersedia 🚧",
       description:
-        "Fitur ini belum diimplementasikan. Anda bisa memintanya di prompt berikutnya! 🚀",
+        "Fitur ini belum Tersdia. ",
       variant: "default",
     });
   };
