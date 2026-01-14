@@ -9,17 +9,81 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Edit2, Trash2 } from "lucide-react";
+const SortableTh = ({ label, column, sort, onSortChange }) => {
+  const active = sort.key === column;
+  const dir = active ? sort.direction : "asc";
 
-const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
+  return (
+    <TableHead
+      onClick={() =>
+        onSortChange({
+          key: column,
+          direction: active && dir === "asc" ? "desc" : "asc",
+        })
+      }
+      className="cursor-pointer select-none hover:text-primary whitespace-nowrap"
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className={`text-xs ${active ? "opacity-100" : "opacity-30"}`}>
+          {dir === "asc" ? "▲" : "▼"}
+        </span>
+      </span>
+    </TableHead>
+  );
+};
+
+
+const SkeletonRow = () => (
+  <TableRow className="animate-pulse">
+    {Array.from({ length: 10 }).map((_, i) => (
+      <TableCell key={i}>
+        <div className="h-4 w-full rounded bg-muted" />
+      </TableCell>
+    ))}
+  </TableRow>
+);
+
+const AttendanceTable = ({
+  records,
+  loading,
+  onEdit,
+  onDelete,
+  sort,
+  onSortChange,
+}) => (
   <div className="overflow-x-auto">
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Tanggal</TableHead>
-          <TableHead>Nama Karyawan</TableHead>
-          <TableHead>NIK</TableHead>
+          <SortableTh
+            label="Tanggal"
+            column="date"
+            sort={sort}
+            onSortChange={onSortChange}
+          />
+          <SortableTh
+            label="Nama Karyawan"
+            column="name"
+            sort={sort}
+            onSortChange={onSortChange}
+          />
+          <SortableTh
+            label="NIK"
+            column="nik"
+            sort={sort}
+            onSortChange={onSortChange}
+          />
+
           <TableHead>Direct PM</TableHead>
-          <TableHead>Check In</TableHead>
+
+          <SortableTh
+            label="Check In"
+            column="checkin"
+            sort={sort}
+            onSortChange={onSortChange}
+          />
+
           <TableHead>Check Out</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Catatan</TableHead>
@@ -27,16 +91,15 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
           <TableHead>Aksi</TableHead>
         </TableRow>
       </TableHeader>
+
       <TableBody>
         {loading ? (
-          <TableRow>
-            <TableCell colSpan="8" className="text-center">
-              Memuat...
-            </TableCell>
-          </TableRow>
+          Array.from({ length: 10 }).map((_, i) => <SkeletonRow key={i} />)
         ) : records.length === 0 ? (
           <TableRow>
-            <TableCell colSpan="8" className="text-center">
+            <TableCell
+              colSpan="10"
+              className="text-center py-6 text-muted-foreground">
               Tidak ada catatan absensi untuk filter ini.
             </TableCell>
           </TableRow>
@@ -48,19 +111,20 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
                   timeZone: "UTC",
                 })}
               </TableCell>
+
               <TableCell>{record.employee?.name || "N/A"}</TableCell>
               <TableCell>{record.employee?.nik || "N/A"}</TableCell>
-              <TableCell>{record.direct_pm?.name|| "N/A"}</TableCell>
+              <TableCell>{record.direct_pm?.name || "N/A"}</TableCell>
+
               <TableCell>
                 {record.check_in_time
                   ? new Date(record.check_in_time).toLocaleTimeString("id-ID", {
                       hour: "2-digit",
                       minute: "2-digit",
-                      timeZone:
-                        Intl.DateTimeFormat().resolvedOptions().timeZone,
                     })
                   : "-"}
               </TableCell>
+
               <TableCell>
                 {record.check_out_time
                   ? new Date(record.check_out_time).toLocaleTimeString(
@@ -68,17 +132,18 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
                       {
                         hour: "2-digit",
                         minute: "2-digit",
-                        timeZone:
-                          Intl.DateTimeFormat().resolvedOptions().timeZone,
                       }
                     )
                   : "-"}
               </TableCell>
+
               <TableCell>
                 {record.attendance_statuses?.name ||
                   (record.check_in_time ? "Hadir" : "-")}
               </TableCell>
+
               <TableCell>{record.notes || "-"}</TableCell>
+
               <TableCell className="space-y-1">
                 {record.loc_checkin && (
                   <a
@@ -102,21 +167,21 @@ const AttendanceTable = ({ records, loading, onEdit, onDelete }) => (
 
                 {!record.loc_checkin && !record.loc_checkout && "-"}
               </TableCell>
+
               <TableCell>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => onEdit(record)}
-                  className="hover:text-blue-500 mr-2"
-                  title="Edit">
+                  className="hover:text-blue-500 mr-2">
                   <Edit2 className="h-4 w-4" />
                 </Button>
+
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => onDelete(record.id)}
-                  className="hover:text-red-500"
-                  title="Hapus">
+                  className="hover:text-red-500">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </TableCell>

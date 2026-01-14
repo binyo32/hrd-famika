@@ -37,6 +37,7 @@ import { addLog } from "@/lib/activityLogService";
 import AttendanceMapTab from "@/components/admin/attendance/AttendanceMapTab";
 // excel export
 import { exportAttendanceToExcel } from "@/lib/attendanceExportService";
+import Pagination from "../components/ui/Pagination";
 
 const AdminAttendanceManagement = () => {
   const { user } = useAuth();
@@ -60,6 +61,14 @@ const AdminAttendanceManagement = () => {
     status_id: "",
     notes: "",
   });
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const [sort, setSort] = useState({
+    key: "attendance_date",
+    direction: "desc", // asc | desc
+  });
+
   const [editingRecord, setEditingRecord] = useState(null);
 
   const [filterDate, setFilterDate] = useState(
@@ -164,6 +173,16 @@ const AdminAttendanceManagement = () => {
     },
     []
   );
+  useEffect(() => {
+    setPage(1);
+  }, [
+    filterDate,
+    filterEmployee,
+    searchTerm,
+    currentTab,
+    filterStartDate,
+    filterEndDate,
+  ]);
 
   useEffect(() => {
     fetchEmployees();
@@ -399,6 +418,45 @@ const AdminAttendanceManagement = () => {
     return employeeName.includes(search) || employeeNik.includes(search);
   });
 
+  const sortedRecords = React.useMemo(() => {
+    const data = [...filteredRecords];
+
+    data.sort((a, b) => {
+      let aVal, bVal;
+
+      switch (sort.key) {
+        case "name":
+          aVal = a.employee?.name || "";
+          bVal = b.employee?.name || "";
+          break;
+        case "nik":
+          aVal = a.employee?.nik || "";
+          bVal = b.employee?.nik || "";
+          break;
+        case "date":
+          aVal = a.attendance_date;
+          bVal = b.attendance_date;
+          break;
+        case "checkin":
+          aVal = a.check_in_time || "";
+          bVal = b.check_in_time || "";
+          break;
+        default:
+          return 0;
+      }
+
+      if (aVal < bVal) return sort.direction === "asc" ? -1 : 1;
+      if (aVal > bVal) return sort.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return data;
+  }, [filteredRecords, sort]);
+  const pagedRecords = React.useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedRecords.slice(start, start + pageSize);
+  }, [sortedRecords, page]);
+
   const tabItems = [
     { id: "daily_recap", label: "Rekap Harian", icon: CalendarDays },
     { id: "map", label: "Peta Absensi", icon: MapPin },
@@ -434,10 +492,19 @@ const AdminAttendanceManagement = () => {
                 employees={employees}
               />
               <AttendanceTable
-                records={filteredRecords}
+                records={pagedRecords}
                 loading={loading.records}
                 onEdit={openManualInputDialogHandler}
                 onDelete={handleDeleteRecord}
+                sort={sort}
+                onSortChange={setSort}
+              />
+              <Pagination
+                page={page}
+                pageSize={pageSize}
+                totalRecords={sortedRecords.length}
+                onPageChange={setPage}
+                className="mt-4"
               />
             </CardContent>
           </Card>
@@ -540,12 +607,12 @@ const AdminAttendanceManagement = () => {
               </div>
 
               <Button
-                onClick={async () => {
+                onClick={() => {
                   try {
-                    await exportAttendanceToExcel({
+                    exportAttendanceToExcel({
+                      records: sortedRecords,
                       startDate: filterStartDate,
                       endDate: filterEndDate,
-                      employeeId: filterEmployee || null,
                     });
 
                     toast({
@@ -566,8 +633,21 @@ const AdminAttendanceManagement = () => {
 
               <AttendanceSummaryCards summary={attendanceSummary} />
               <AttendanceReportTable
-                records={filteredRecords}
+                records={pagedRecords} // <-- sudah di-sort + di-page
                 loading={loading.records}
+                sort={sort}
+                onSortChange={(s) => {
+                  setSort(s);
+                  setPage(1); // reset ke page 1 saat sort berubah
+                }}
+              />
+
+              <Pagination
+                page={page}
+                pageSize={pageSize}
+                totalRecords={sortedRecords.length} // <-- total setelah sort
+                onPageChange={setPage}
+                className="mt-4"
               />
             </CardContent>
           </Card>

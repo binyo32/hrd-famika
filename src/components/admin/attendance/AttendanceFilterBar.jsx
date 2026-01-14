@@ -20,7 +20,7 @@ const AttendanceFilterBar = ({
       <Label htmlFor="filterDate">Tanggal</Label>
       <Input id="filterDate" type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
     </div>
-    <div className="flex-1">
+    {/* <div className="flex-1">
       <Label htmlFor="filterEmployeeRecap">Karyawan (Opsional)</Label>
       <Select value={filterEmployee || "ALL_EMPLOYEES_PLACEHOLDER"} onValueChange={(value) => setFilterEmployee(value === "ALL_EMPLOYEES_PLACEHOLDER" ? "" : value)}>
         <SelectTrigger id="filterEmployeeRecap"><SelectValue placeholder="Semua Karyawan" /></SelectTrigger>
@@ -29,7 +29,7 @@ const AttendanceFilterBar = ({
           {(employees || []).filter(emp => emp && emp.id).map(emp => <SelectItem key={emp.id} value={emp.id}>{emp.name} ({emp.nik})</SelectItem>)}
         </SelectContent>
       </Select>
-    </div>
+    </div> */}
     <div className="relative flex-1">
       <Label htmlFor="searchTermRecap">Cari Karyawan (Nama/NIK)</Label>
       <Input
