@@ -458,10 +458,11 @@ const EmployeeAttendancePage = () => {
         setProjectText={setProjectText}
         onSearchPM={fetchPM}
         onConfirm={async () => {
-          await handleCheckIn({
-            direct_pm_id: selectedPM,
-            project: projectText,
-          });
+         await handleCheckIn({
+  direct_pm_id: selectedPM?.id ?? null,
+  project: projectText,
+});
+
           resetCheckInFlow();
         }}
       />
