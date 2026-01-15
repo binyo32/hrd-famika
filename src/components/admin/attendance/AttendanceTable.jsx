@@ -7,6 +7,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+
 import { Button } from "@/components/ui/button";
 import { Edit2, Trash2 } from "lucide-react";
 const SortableTh = ({ label, column, sort, onSortChange }) => {
@@ -21,8 +29,7 @@ const SortableTh = ({ label, column, sort, onSortChange }) => {
           direction: active && dir === "asc" ? "desc" : "asc",
         })
       }
-      className="cursor-pointer select-none hover:text-primary whitespace-nowrap"
-    >
+      className="cursor-pointer select-none hover:text-primary whitespace-nowrap">
       <span className="inline-flex items-center gap-1">
         {label}
         <span className={`text-xs ${active ? "opacity-100" : "opacity-30"}`}>
@@ -32,7 +39,6 @@ const SortableTh = ({ label, column, sort, onSortChange }) => {
     </TableHead>
   );
 };
-
 
 const SkeletonRow = () => (
   <TableRow className="animate-pulse">
@@ -51,8 +57,34 @@ const AttendanceTable = ({
   onDelete,
   sort,
   onSortChange,
+
+  page,
+  pageSize,
+  totalRecords,
+  onPageSizeChange,
 }) => (
   <div className="overflow-x-auto">
+    <div className="flex items-center justify-end mb-3 gap-4 flex-wrap">
+
+      <div className="flex items-center gap-2 px-4 py-1">
+        <span className="text-sm">Rows:</span>
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => onPageSizeChange(Number(v))}>
+          <SelectTrigger className="w-[90px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[10, 20, 50, 100].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+
     <Table>
       <TableHeader>
         <TableRow>

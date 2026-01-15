@@ -62,13 +62,12 @@ const AdminAttendanceManagement = () => {
     notes: "",
   });
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState(10);
 
   const [sort, setSort] = useState({
     key: "attendance_date",
     direction: "desc", // asc | desc
   });
-
   const [editingRecord, setEditingRecord] = useState(null);
 
   const [filterDate, setFilterDate] = useState(
@@ -417,6 +416,10 @@ const AdminAttendanceManagement = () => {
     const search = searchTerm.toLowerCase();
     return employeeName.includes(search) || employeeNik.includes(search);
   });
+  const getWorkMinutes = (r) => {
+    if (!r.check_in_time || !r.check_out_time) return 0;
+    return (new Date(r.check_out_time) - new Date(r.check_in_time)) / 60000;
+  };
 
   const sortedRecords = React.useMemo(() => {
     const data = [...filteredRecords];
@@ -441,6 +444,10 @@ const AdminAttendanceManagement = () => {
           aVal = a.check_in_time || "";
           bVal = b.check_in_time || "";
           break;
+        case "workhours":
+          aVal = getWorkMinutes(a);
+          bVal = getWorkMinutes(b);
+          break;
         default:
           return 0;
       }
@@ -455,7 +462,7 @@ const AdminAttendanceManagement = () => {
   const pagedRecords = React.useMemo(() => {
     const start = (page - 1) * pageSize;
     return sortedRecords.slice(start, start + pageSize);
-  }, [sortedRecords, page]);
+  }, [sortedRecords, page, pageSize]);
 
   const tabItems = [
     { id: "daily_recap", label: "Rekap Harian", icon: CalendarDays },
@@ -498,7 +505,15 @@ const AdminAttendanceManagement = () => {
                 onDelete={handleDeleteRecord}
                 sort={sort}
                 onSortChange={setSort}
+                page={page}
+                pageSize={pageSize}
+                totalRecords={sortedRecords.length}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
+                }}
               />
+
               <Pagination
                 page={page}
                 pageSize={pageSize}
@@ -633,12 +648,19 @@ const AdminAttendanceManagement = () => {
 
               <AttendanceSummaryCards summary={attendanceSummary} />
               <AttendanceReportTable
-                records={pagedRecords} // <-- sudah di-sort + di-page
+                records={pagedRecords}
                 loading={loading.records}
                 sort={sort}
                 onSortChange={(s) => {
                   setSort(s);
-                  setPage(1); // reset ke page 1 saat sort berubah
+                  setPage(1);
+                }}
+                page={page}
+                pageSize={pageSize}
+                totalRecords={sortedRecords.length}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setPage(1);
                 }}
               />
 

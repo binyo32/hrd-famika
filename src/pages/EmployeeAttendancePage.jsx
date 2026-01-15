@@ -187,134 +187,84 @@ const EmployeeAttendancePage = () => {
     return filePath;
   };
 
-  const handleCheckIn = async ({
-    direct_pm_id = null,
-    project = null,
-  } = {}) => {
-    if (!user?.id) return;
+ const handleCheckIn = async ({
+  direct_pm_id = null,
+  project = null,
+} = {}) => {
+  if (!user?.id) return;
 
-    if (!liveLocation) {
-      toast({
-        title: "Lokasi belum tersedia",
-        description: "Tunggu hingga lokasi terdeteksi.",
-        variant: "destructive",
-      });
-      return;
-    }
+  if (!selfieBlob || !liveLocation) {
+    toast({ title: "Data belum lengkap", variant: "destructive" });
+    return;
+  }
 
-    setLoading((p) => ({ ...p, checkInOut: true }));
+  setLoading((p) => ({ ...p, checkInOut: true }));
 
-    try {
-      if (!selfieBlob) {
-        toast({
-          title: "Selfie belum diambil",
-          description: "Silakan ambil selfie terlebih dahulu",
-          variant: "destructive",
-        });
-        return;
-      }
+  try {
+    const selfiePath = await uploadSelfie(selfieBlob);
 
-      const today = new Date().toISOString().split("T")[0];
-      const checkInTime = new Date().toISOString();
-      const selfiePath = await uploadSelfie(selfieBlob);
+    const locPayload = getCurrentLiveLocationPayload();
 
-      const locPayload = getCurrentLiveLocationPayload();
+    const { data: hadirStatus } = await supabase
+      .from("attendance_statuses")
+      .select("id")
+      .eq("code", "H")
+      .single();
 
-      const { data: hadirStatus } = await supabase
-        .from("attendance_statuses")
-        .select("id")
-        .eq("code", "H")
-        .single();
+    const { data, error } = await supabase.rpc("check_in_employee", {
+      p_employee_id: user.id,
+      p_status_id: hadirStatus.id,
+      p_loc: locPayload,
+      p_direct_pm: direct_pm_id,
+      p_project: project,
+      p_attachment: selfiePath,
+    });
 
-      const { data, error } = await supabase
-        .from("attendance_records")
-        .upsert(
-          {
-            employee_id: user.id,
-            attendance_date: today,
-            check_in_time: checkInTime,
-            status_id: hadirStatus.id,
-            loc_checkin: locPayload,
-            direct_pm_id,
-            project,
-            attachment: selfiePath,
-          },
-          { onConflict: "employee_id, attendance_date" }
-        )
-        .select()
-        .single();
+    if (error) throw error;
 
-      if (error) throw error;
+    setTodayAttendance(data);
+    fetchAttendanceHistory();
 
-      setTodayAttendance(data);
-      fetchAttendanceHistory();
+    toast({
+      title: "Check-In Berhasil",
+      description: "Jam diambil dari server (WIB)",
+      className: "bg-green-500 text-white",
+    });
+  } catch (err) {
+    toast({ title: "Gagal Check-In", description: err.message });
+  } finally {
+    setLoading((p) => ({ ...p, checkInOut: false }));
+  }
+};
 
-      toast({
-        title: "Check-In Berhasil",
-        description: "Lokasi diambil dari live GPS.",
-        className: "bg-green-500 text-white",
-      });
-      setSelfieBlob(null);
-    } catch (err) {
-      toast({
-        title: "Gagal Check-In",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading((p) => ({ ...p, checkInOut: false }));
-    }
-  };
 
-  const handleCheckOut = async () => {
-    if (!todayAttendance?.id) return;
+ const handleCheckOut = async () => {
+  if (!todayAttendance?.id || !liveLocation) return;
 
-    if (!liveLocation) {
-      toast({
-        title: "Lokasi belum tersedia",
-        description: "Tunggu hingga lokasi terdeteksi.",
-        variant: "destructive",
-      });
-      return;
-    }
+  setLoading((p) => ({ ...p, checkInOut: true }));
 
-    setLoading((p) => ({ ...p, checkInOut: true }));
+  try {
+    const locPayload = getCurrentLiveLocationPayload();
 
-    try {
-      const checkOutTime = new Date().toISOString();
-      const locPayload = getCurrentLiveLocationPayload();
+    const { data, error } = await supabase.rpc("check_out_employee", {
+      p_attendance_id: todayAttendance.id,
+      p_loc: locPayload,
+    });
 
-      const { data, error } = await supabase
-        .from("attendance_records")
-        .update({
-          check_out_time: checkOutTime,
-          loc_checkout: locPayload, //
-        })
-        .eq("id", todayAttendance.id)
-        .select()
-        .single();
+    if (error) throw error;
 
-      if (error) throw error;
+    setTodayAttendance(data);
+    fetchAttendanceHistory();
 
-      setTodayAttendance(data);
-      fetchAttendanceHistory();
+    toast({
+      title: "Check-Out Berhasil",
+      description: "Jam server digunakan",
+    });
+  } finally {
+    setLoading((p) => ({ ...p, checkInOut: false }));
+  }
+};
 
-      toast({
-        title: "Check-Out Berhasil",
-        description: "Lokasi diambil dari live GPS.",
-        className: "bg-blue-500 text-white",
-      });
-      setShowCheckoutConfirm(false);
-    } catch (err) {
-      toast({
-        title: "Gagal Check-Out",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading((p) => ({ ...p, checkInOut: false }));
-    }
-  };
 
   const canCheckIn = !todayAttendance || !todayAttendance.check_in_time;
   const canCheckOut =

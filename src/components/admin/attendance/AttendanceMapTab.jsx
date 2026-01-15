@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronsUpDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import AttendanceMap from "./AttendanceMap";
+import { useMemo } from "react";
 
 const AttendanceMapTab = ({
   records,
@@ -32,10 +33,28 @@ const AttendanceMapTab = ({
   filterEmployee,
   setFilterEmployee,
 }) => {
-  const selectedEmployee = employees.find(
-    (e) => e.id === filterEmployee
-  );
+  const selectedEmployee = employees.find((e) => e.id === filterEmployee);
+  const summary = useMemo(() => {
+    let total = records.length;
+    let checkInCount = 0;
+    let checkOutCount = 0;
 
+    records.forEach((r) => {
+      if (r.loc_checkin?.lat && r.loc_checkin?.lng) {
+        checkInCount++;
+      }
+
+      if (r.loc_checkout?.lat && r.loc_checkout?.lng) {
+        checkOutCount++;
+      }
+    });
+
+    return {
+      total,
+      checkInCount,
+      checkOutCount,
+    };
+  }, [records]);
   return (
     <Card className="relative">
       <CardHeader>
@@ -66,44 +85,30 @@ const AttendanceMapTab = ({
                 <Button
                   variant="outline"
                   role="combobox"
-                  className="w-full justify-between"
-                >
-                  {selectedEmployee
-                    ? selectedEmployee.name
-                    : "Semua Karyawan"}
+                  className="w-full justify-between">
+                  {selectedEmployee ? selectedEmployee.name : "Semua Karyawan"}
                   <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                 </Button>
               </PopoverTrigger>
 
-              <PopoverContent
-                className="w-[300px] p-0 z-[9999]"
-                align="start"
-              >
+              <PopoverContent className="w-[300px] p-0 z-[9999]" align="start">
                 <Command>
                   <CommandInput placeholder="Cari karyawan..." />
                   <CommandList>
-                    <CommandEmpty>
-                      Karyawan tidak ditemukan
-                    </CommandEmpty>
+                    <CommandEmpty>Karyawan tidak ditemukan</CommandEmpty>
 
                     <CommandItem
                       value="ALL"
-                      onSelect={() => setFilterEmployee("")}
-                    >
+                      onSelect={() => setFilterEmployee("")}>
                       Semua Karyawan
-                      {!filterEmployee && (
-                        <Check className="ml-auto h-4 w-4" />
-                      )}
+                      {!filterEmployee && <Check className="ml-auto h-4 w-4" />}
                     </CommandItem>
 
                     {employees.map((e) => (
                       <CommandItem
                         key={e.id}
                         value={e.name}
-                        onSelect={() =>
-                          setFilterEmployee(e.id)
-                        }
-                      >
+                        onSelect={() => setFilterEmployee(e.id)}>
                         {e.name}
                         {filterEmployee === e.id && (
                           <Check className="ml-auto h-4 w-4" />
@@ -114,6 +119,31 @@ const AttendanceMapTab = ({
                 </Command>
               </PopoverContent>
             </Popover>
+          </div>
+        </div>
+        <div className="rounded-md md:flex justify-center items-center gap-4 px-4 py-2 text-sm">
+          <span className="font-medium">
+            Peta absensi
+            {filterDate && (
+              <>
+                {" "}
+                tanggal{" "}
+                {new Date(filterDate).toLocaleDateString("id-ID", {
+                  day: "2-digit",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </>
+            )} ,
+          </span>
+
+          <div className=" flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+            <span className="text-blue-500">
+              Check-in: <b >{summary.checkInCount}</b> lokasi
+            </span>
+            <span className="text-red-500">
+              Check-out: <b>{summary.checkOutCount}</b> lokasi
+            </span>
           </div>
         </div>
 
