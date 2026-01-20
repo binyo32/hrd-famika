@@ -27,7 +27,8 @@ import AdminContractManagement from "@/pages/AdminContractManagement";
 import BirthdayCard from "@/components/admin/dashboard/BirthdayCard";
 import BirthdayDialog from "@/components/admin/dashboard/BirthdayDialog";
 import EmployeeAttendancePage from "@/pages/EmployeeAttendancePage";
-import TeamAttendancePage from "./pages/TeamAttemdancePage";
+import TeamAttendancePage from "@/pages/TeamAttendancePage";
+import EmployeeTeamPage from "@/pages/EmployeeTeamPage";
 
 function AppContent() {
   const { successModalProps, showSuccessModal, hideSuccessModal } =
@@ -164,6 +165,14 @@ function AppContent() {
             element={
               <ProtectedRoute requiredRole="employee">
                 <TeamAttendancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/employee/my-team"
+            element={
+              <ProtectedRoute requiredRole="employee">
+                <EmployeeTeamPage />
               </ProtectedRoute>
             }
           />

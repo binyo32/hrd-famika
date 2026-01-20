@@ -46,6 +46,26 @@ export const AuthProvider = ({ children }) => {
    * BUILD FULL USER (KUNCI)
    * ========================= */
   const buildFullUser = async (userId, role) => {
+    // if (role === "employee") {
+    //   const { data, error } = await supabase
+    //     .from("employees")
+    //     .select("*")
+    //     .eq("id", userId)
+    //     .single();
+
+    //   if (error) throw error;
+
+    //   const isPM = await checkIsPM(userId);
+
+    //   return {
+    //     id: userId,
+    //     role,
+    //     isPM,
+    //     name: data.name,
+    //     email: data.email,
+    //     employeeData: mapEmployeeDataFromSupabase(data),
+    //   };
+    // }
     if (role === "employee") {
       const { data, error } = await supabase
         .from("employees")
@@ -56,11 +76,13 @@ export const AuthProvider = ({ children }) => {
       if (error) throw error;
 
       const isPM = await checkIsPM(userId);
+      const isDirectManager = await checkIsDirectManager(userId);
 
       return {
         id: userId,
         role,
         isPM,
+        isDirectManager,
         name: data.name,
         email: data.email,
         employeeData: mapEmployeeDataFromSupabase(data),
@@ -131,6 +153,43 @@ export const AuthProvider = ({ children }) => {
 
     if (error) return false;
     return count > 0;
+  };
+  /* =========================
+   * CHECK DIRECT MANAGER (N LEVEL)
+   * ========================= */
+  const checkIsDirectManager = async (managerId) => {
+    try {
+      const visited = new Set();
+
+      const traverse = async (currentManagerId) => {
+        // cegah infinite loop
+        if (visited.has(currentManagerId)) return false;
+        visited.add(currentManagerId);
+
+        const { data, error } = await supabase
+          .from("employees")
+          .select("id")
+          .eq("direct_manager_id", currentManagerId);
+
+        if (error) return false;
+
+        // kalau punya bawahan langsung → manager
+        if (data.length > 0) return true;
+
+        // cek level berikutnya
+        for (const emp of data) {
+          const isManagerBelow = await traverse(emp.id);
+          if (isManagerBelow) return true;
+        }
+
+        return false;
+      };
+
+      return await traverse(managerId);
+    } catch (err) {
+      console.error("checkIsDirectManager error:", err);
+      return false;
+    }
   };
 
   return (

@@ -17,7 +17,7 @@ const AdminSettings = () => {
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [itemType, setItemType] = useState(''); // 'Divisi' or 'Jabatan'
+  const [itemType, setItemType] = useState('');
 
   const fetchData = useCallback(async (tableName, setData, loadingKey) => {
     setLoading(prev => ({ ...prev, [loadingKey]: true }));

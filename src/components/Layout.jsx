@@ -20,6 +20,9 @@ import {
   History,
   UserCheck,
   FileText,
+  UserCircle2Icon,
+  UserXIcon,
+  UserCog2,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { motion, AnimatePresence } from "framer-motion";
@@ -37,7 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-const getNavLinks = (role, isPM) => {
+const getNavLinks = (role, isPM,isDirectManager) => {
   if (role === "admin") {
     return [
       { to: "/admin/dashboard", icon: LayoutDashboard, text: "Dashboard" },
@@ -81,12 +84,18 @@ const getNavLinks = (role, isPM) => {
     { to: "/employee/profile", icon: UserCircle, text: "Profil Saya" },
   ];
 
-  // === TAMBAHAN KHUSUS PM ===
   if (isPM) {
     links.splice(2, 0, {
       to: "/employee/pm-attendance",
       icon: UserCheck,
       text: "Absensi Tim",
+    });
+  }
+  if (isDirectManager) {
+    links.splice(2, 0, {
+      to: "/employee/my-team",
+      icon: UserCog2,
+      text: "Tim Saya",
     });
   }
 
@@ -116,7 +125,7 @@ const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse ,  onLogou
     navigate("/login");
   };
 
-  const navLinks = getNavLinks(user?.role, user?.isPM);
+  const navLinks = getNavLinks(user?.role, user?.isPM,user?.isDirectManager);
 
   const sidebarVariants = {
     open: { x: 0 },
