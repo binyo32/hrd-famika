@@ -1,9 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-} from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,7 +55,6 @@ const EmployeeAttendancePage = () => {
   const [liveLocation, setLiveLocation] = useState(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
 
-
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -71,6 +65,7 @@ const EmployeeAttendancePage = () => {
     const { data, error } = await supabase
       .from("employees")
       .select("id, name")
+      .eq("is_direct_pm", true)
       .ilike("name", `%${keyword}%`)
       .order("name")
       .limit(20);
@@ -187,84 +182,82 @@ const EmployeeAttendancePage = () => {
     return filePath;
   };
 
- const handleCheckIn = async ({
-  direct_pm_id = null,
-  project = null,
-} = {}) => {
-  if (!user?.id) return;
+  const handleCheckIn = async ({
+    direct_pm_id = null,
+    project = null,
+  } = {}) => {
+    if (!user?.id) return;
 
-  if (!selfieBlob || !liveLocation) {
-    toast({ title: "Data belum lengkap", variant: "destructive" });
-    return;
-  }
+    if (!selfieBlob || !liveLocation) {
+      toast({ title: "Data belum lengkap", variant: "destructive" });
+      return;
+    }
 
-  setLoading((p) => ({ ...p, checkInOut: true }));
+    setLoading((p) => ({ ...p, checkInOut: true }));
 
-  try {
-    const selfiePath = await uploadSelfie(selfieBlob);
+    try {
+      const selfiePath = await uploadSelfie(selfieBlob);
 
-    const locPayload = getCurrentLiveLocationPayload();
+      const locPayload = getCurrentLiveLocationPayload();
 
-    const { data: hadirStatus } = await supabase
-      .from("attendance_statuses")
-      .select("id")
-      .eq("code", "H")
-      .single();
+      const { data: hadirStatus } = await supabase
+        .from("attendance_statuses")
+        .select("id")
+        .eq("code", "H")
+        .single();
 
-    const { data, error } = await supabase.rpc("check_in_employee", {
-      p_employee_id: user.id,
-      p_status_id: hadirStatus.id,
-      p_loc: locPayload,
-      p_direct_pm: direct_pm_id,
-      p_project: project,
-      p_attachment: selfiePath,
-    });
+      const { data, error } = await supabase.rpc("check_in_employee", {
+        p_employee_id: user.id,
+        p_status_id: hadirStatus.id,
+        p_loc: locPayload,
+        p_direct_pm: direct_pm_id,
+        p_project: project,
+        p_attachment: selfiePath,
+      });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    setTodayAttendance(data);
-    fetchAttendanceHistory();
+      setTodayAttendance(data);
+      fetchAttendanceHistory();
 
-    toast({
-      title: "Check-In Berhasil",
-      description: "Jam diambil dari server (WIB)",
-      className: "bg-green-500 text-white",
-    });
-  } catch (err) {
-    toast({ title: "Gagal Check-In", description: err.message });
-  } finally {
-    setLoading((p) => ({ ...p, checkInOut: false }));
-  }
-};
+      toast({
+        title: "Check-In Berhasil",
+        description: "Jam diambil dari server (WIB)",
+        className: "bg-green-500 text-white",
+      });
+    } catch (err) {
+      toast({ title: "Gagal Check-In", description: err.message });
+    } finally {
+      setLoading((p) => ({ ...p, checkInOut: false }));
+    }
+  };
 
+  const handleCheckOut = async () => {
+    if (!todayAttendance?.id || !liveLocation) return;
 
- const handleCheckOut = async () => {
-  if (!todayAttendance?.id || !liveLocation) return;
+    setLoading((p) => ({ ...p, checkInOut: true }));
 
-  setLoading((p) => ({ ...p, checkInOut: true }));
+    try {
+      const locPayload = getCurrentLiveLocationPayload();
 
-  try {
-    const locPayload = getCurrentLiveLocationPayload();
+      const { data, error } = await supabase.rpc("check_out_employee", {
+        p_attendance_id: todayAttendance.id,
+        p_loc: locPayload,
+      });
 
-    const { data, error } = await supabase.rpc("check_out_employee", {
-      p_attendance_id: todayAttendance.id,
-      p_loc: locPayload,
-    });
+      if (error) throw error;
 
-    if (error) throw error;
+      setTodayAttendance(data);
+      fetchAttendanceHistory();
 
-    setTodayAttendance(data);
-    fetchAttendanceHistory();
-
-    toast({
-      title: "Check-Out Berhasil",
-      description: "Jam server digunakan",
-    });
-  } finally {
-    setLoading((p) => ({ ...p, checkInOut: false }));
-  }
-};
-
+      toast({
+        title: "Check-Out Berhasil",
+        description: "Jam server digunakan",
+      });
+    } finally {
+      setLoading((p) => ({ ...p, checkInOut: false }));
+    }
+  };
 
   const canCheckIn = !todayAttendance || !todayAttendance.check_in_time;
   const canCheckOut =
@@ -317,7 +310,7 @@ const EmployeeAttendancePage = () => {
         enableHighAccuracy: true,
         timeout: 15000,
         maximumAge: 0,
-      }
+      },
     );
   };
 
@@ -337,7 +330,7 @@ const EmployeeAttendancePage = () => {
         // Reverse geocoding (OpenStreetMap)
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
           );
           const data = await res.json();
           setLiveAddress(data.display_name || "-");
@@ -352,7 +345,7 @@ const EmployeeAttendancePage = () => {
         enableHighAccuracy: true,
         maximumAge: 10000,
         timeout: 5000,
-      }
+      },
     );
 
     setWatchId(id);
@@ -384,7 +377,7 @@ const EmployeeAttendancePage = () => {
   }, {});
 
   const monthlyData = Object.values(monthlySummary);
- 
+
   return (
     <Layout>
       {showLocationModal && (
@@ -408,10 +401,10 @@ const EmployeeAttendancePage = () => {
         setProjectText={setProjectText}
         onSearchPM={fetchPM}
         onConfirm={async () => {
-         await handleCheckIn({
-  direct_pm_id: selectedPM?.id ?? null,
-  project: projectText,
-});
+          await handleCheckIn({
+            direct_pm_id: selectedPM?.id ?? null,
+            project: projectText,
+          });
 
           resetCheckInFlow();
         }}
@@ -475,7 +468,7 @@ const EmployeeAttendancePage = () => {
                     <p className="text-center text-green-600">
                       Check-In pada:{" "}
                       {new Date(
-                        todayAttendance.check_in_time
+                        todayAttendance.check_in_time,
                       ).toLocaleTimeString("id-ID")}
                       {todayAttendance.attendance_statuses &&
                         ` (${todayAttendance.attendance_statuses.name})`}
@@ -485,7 +478,7 @@ const EmployeeAttendancePage = () => {
                     <p className="text-center text-blue-600">
                       Check-Out pada:{" "}
                       {new Date(
-                        todayAttendance.check_out_time
+                        todayAttendance.check_out_time,
                       ).toLocaleTimeString("id-ID")}
                     </p>
                   )}

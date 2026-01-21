@@ -27,6 +27,7 @@ import {
   CalendarDays,
   FileText,
   MapPin,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import AttendanceFilterBar from "@/components/admin/attendance/AttendanceFilterBar";
@@ -38,6 +39,7 @@ import AttendanceMapTab from "@/components/admin/attendance/AttendanceMapTab";
 // excel export
 import { exportAttendanceToExcel } from "@/lib/attendanceExportService";
 import Pagination from "../components/ui/Pagination";
+import AttendanceSetting from "../components/admin/attendance/AttendanceSetting";
 
 const AdminAttendanceManagement = () => {
   const { user } = useAuth();
@@ -71,13 +73,13 @@ const AdminAttendanceManagement = () => {
   const [editingRecord, setEditingRecord] = useState(null);
 
   const [filterDate, setFilterDate] = useState(
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0],
   );
   const [filterStartDate, setFilterStartDate] = useState(
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0],
   );
   const [filterEndDate, setFilterEndDate] = useState(
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0],
   );
 
   const [filterEmployee, setFilterEmployee] = useState("");
@@ -85,13 +87,27 @@ const AdminAttendanceManagement = () => {
 
   const fetchEmployees = useCallback(async () => {
     setLoading((prev) => ({ ...prev, employees: true }));
+
     try {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("id, name, nik")
-        .order("name");
-      if (error) throw error;
-      setEmployees(data);
+      let allEmployees = [];
+      let from = 0;
+      const limit = 1000;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from("employees")
+          .select("id, name, nik, is_direct_pm")
+          .order("name")
+          .range(from, from + limit - 1);
+
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        allEmployees = allEmployees.concat(data);
+        from += limit;
+      }
+
+      setEmployees(allEmployees);
     } catch (error) {
       toast({
         title: "Error",
@@ -140,7 +156,7 @@ const AdminAttendanceManagement = () => {
       name
     ),
     attendance_statuses (name)
-  `
+  `,
           )
           .order("attendance_date", { ascending: false });
 
@@ -170,7 +186,7 @@ const AdminAttendanceManagement = () => {
         setLoading((prev) => ({ ...prev, records: false }));
       }
     },
-    []
+    [],
   );
   useEffect(() => {
     setPage(1);
@@ -293,11 +309,11 @@ const AdminAttendanceManagement = () => {
       attendance_date: manualInputData.attendance_date,
       check_in_time: createISODateTimeString(
         manualInputData.attendance_date,
-        manualInputData.check_in_time
+        manualInputData.check_in_time,
       ),
       check_out_time: createISODateTimeString(
         manualInputData.attendance_date,
-        manualInputData.check_out_time
+        manualInputData.check_out_time,
       ),
       status_id: manualInputData.status_id || null,
       notes: manualInputData.notes,
@@ -325,7 +341,7 @@ const AdminAttendanceManagement = () => {
       if (response.error) throw response.error;
 
       const employee = employees.find(
-        (e) => e.id === response.data.employee_id
+        (e) => e.id === response.data.employee_id,
       );
       await addLog({
         userId: user.id,
@@ -372,7 +388,7 @@ const AdminAttendanceManagement = () => {
           `
     *,
     employee:employees!attendance_records_employee_id_fkey(name)
-  `
+  `,
         )
         .eq("id", recordId)
         .single();
@@ -468,6 +484,7 @@ const AdminAttendanceManagement = () => {
     { id: "daily_recap", label: "Rekap Harian", icon: CalendarDays },
     { id: "map", label: "Peta Absensi", icon: MapPin },
     { id: "manual_input", label: "Input Manual", icon: UserPlus },
+    { id: "setting", label: "Pengaturan", icon: Settings },
     { id: "requests", label: "Pengajuan Izin", icon: FileText, disabled: true },
     {
       id: "reports",
@@ -567,7 +584,7 @@ const AdminAttendanceManagement = () => {
                     value={filterEmployee || "ALL_EMPLOYEES_PLACEHOLDER"}
                     onValueChange={(value) =>
                       setFilterEmployee(
-                        value === "ALL_EMPLOYEES_PLACEHOLDER" ? "" : value
+                        value === "ALL_EMPLOYEES_PLACEHOLDER" ? "" : value,
                       )
                     }>
                     <SelectTrigger id="filterEmployeeRecap">
@@ -698,6 +715,14 @@ const AdminAttendanceManagement = () => {
             setFilterDate={setFilterDate}
             filterEmployee={filterEmployee}
             setFilterEmployee={setFilterEmployee}
+          />
+        );
+      case "setting":
+        return (
+          <AttendanceSetting
+            employees={employees}
+            setEmployees={setEmployees}
+            loading={loading.employees}
           />
         );
 

@@ -29,10 +29,6 @@ const TeamAttendancePage = () => {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-
-  /* ==========================
-      DEBOUNCE SEARCH
-  ========================== */
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(search);
@@ -40,10 +36,6 @@ const TeamAttendancePage = () => {
 
     return () => clearTimeout(handler);
   }, [search]);
-
-  /* ==========================
-      FETCH DATA
-  ========================== */
   useEffect(() => {
     if (!user) return;
     fetchAttendance();
@@ -78,7 +70,6 @@ const TeamAttendancePage = () => {
     .eq("direct_pm_id", user.id)
     .order("attendance_date", { ascending: false });
 
-  // FILTER TANGGAL (server-side)
   if (dateFrom) {
     query = query.gte("attendance_date", dateFrom);
   }
@@ -95,7 +86,6 @@ const TeamAttendancePage = () => {
   } else {
     let filteredData = data || [];
 
-    // FILTER NAMA (client-side, aman)
     if (debouncedSearch) {
       const keyword = debouncedSearch.toLowerCase();
       filteredData = filteredData.filter((item) =>
@@ -128,7 +118,6 @@ const TeamAttendancePage = () => {
 
   return (
     <Layout>
-      {/* HEADER */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
