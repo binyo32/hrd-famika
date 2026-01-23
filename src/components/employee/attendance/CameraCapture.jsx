@@ -9,6 +9,7 @@ const CameraCapture = ({ onConfirm }) => {
 
   const [photoPreview, setPhotoPreview] = useState();
   const [photoBlob, setPhotoBlob] = useState();
+  const [cameraReady, setCameraReady] = useState(false);
 
   useEffect(() => {
     const startCamera = async () => {
@@ -30,29 +31,20 @@ const CameraCapture = ({ onConfirm }) => {
 
   const takePhoto = () => {
     const video = videoRef.current;
-    const canvas = canvasRef.current;
+    if (!video || video.videoWidth === 0) return;
 
+    const canvas = canvasRef.current;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
     const ctx = canvas.getContext("2d");
 
-    // UN-MIRROR
     ctx.setTransform(-1, 0, 0, 1, canvas.width, 0);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    // PREVIEW (base64)
     setPhotoPreview(canvas.toDataURL("image/jpeg", 0.9));
-
-    // BLOB (for upload)
-    canvas.toBlob(
-      (blob) => {
-        setPhotoBlob(blob);
-      },
-      "image/jpeg",
-      0.9
-    );
+    canvas.toBlob((blob) => setPhotoBlob(blob), "image/jpeg", 0.9);
   };
 
   const retake = () => {
@@ -68,6 +60,7 @@ const CameraCapture = ({ onConfirm }) => {
         autoPlay
         playsInline
         muted
+        onLoadedMetadata={() => setCameraReady(true)}
         className={`rounded-md w-full ${
           photoPreview ? "hidden" : "block"
         } -scale-x-100`}
@@ -79,9 +72,9 @@ const CameraCapture = ({ onConfirm }) => {
       )}
 
       {!photoPreview ? (
-        <Button onClick={takePhoto} className="w-full">
+        <Button onClick={takePhoto} disabled={!cameraReady} className="w-full">
           <CameraIcon className="mr-2" />
-          Ambil Foto
+          {cameraReady ? "Ambil Foto" : "Menyiapkan Kamera..."}
         </Button>
       ) : (
         <div className="flex gap-2">
@@ -92,8 +85,7 @@ const CameraCapture = ({ onConfirm }) => {
 
           <Button
             onClick={() => photoBlob && onConfirm(photoBlob)}
-            className="flex-1"
-          >
+            className="flex-1">
             <Check className="mr-2" />
             Lanjut
           </Button>

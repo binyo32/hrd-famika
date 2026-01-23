@@ -1,38 +1,36 @@
 import { supabase } from "@/lib/supabaseClient";
 
 export const fetchMySubordinates = async (managerId) => {
+  const { data, error } = await supabase
+    .from("employees")
+    .select(`
+      id,
+      name,
+      position,
+      division,
+      email,
+      phone,
+      direct_manager_id
+    `);
+
+  if (error) throw error;
+
+  const map = new Map();
+  data.forEach(emp => map.set(emp.id, emp));
+
   const result = [];
-  const visited = new Set();
+  const stack = [managerId];
 
-  const traverse = async (currentId) => {
-    if (visited.has(currentId)) return;
-    visited.add(currentId);
+  while (stack.length) {
+    const current = stack.pop();
+    data
+      .filter(e => e.direct_manager_id === current)
+      .forEach(e => {
+        result.push(e);
+        stack.push(e.id);
+      });
+  }
 
-    const { data, error } = await supabase
-      .from("employees")
-      .select(`
-        id,
-        name,
-        photo,
-        position,
-        division,
-        email,
-        phone,
-        direct_manager_id
-      `)
-      .eq("direct_manager_id", currentId);
-
-    if (error) {
-      console.error("fetchMySubordinates error:", error);
-      return;
-    }
-
-    for (const emp of data) {
-      result.push(emp);
-      await traverse(emp.id); // n-level
-    }
-  };
-
-  await traverse(managerId);
   return result;
 };
+

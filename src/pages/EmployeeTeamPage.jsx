@@ -10,10 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchMySubordinates } from "@/lib/fetchMySubordinates";
 import { motion } from "framer-motion";
@@ -71,10 +69,11 @@ const EmployeeTeamPage = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    loadMyTeam();
-  }, [user]);
+ useEffect(() => {
+  if (!user?.id) return;
+  loadMyTeam();
+}, [user?.id]); // lebih aman
+
 
   const loadMyTeam = async () => {
     setLoading(true);
