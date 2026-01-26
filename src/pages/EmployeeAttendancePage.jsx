@@ -259,6 +259,7 @@ const EmployeeAttendancePage = () => {
 
       setTodayAttendance(data);
       fetchAttendanceHistory();
+      setShowCheckoutConfirm(false);
 
       toast({
         title: "Check-Out Berhasil",
@@ -500,7 +501,7 @@ const EmployeeAttendancePage = () => {
                       ).toLocaleTimeString("id-ID")}
                     </p>
                   )}
-                 
+
                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <Button
                       onClick={() => setShowCheckInFlow(true)}
@@ -582,11 +583,7 @@ const EmployeeAttendancePage = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}>
-         
-            <LocationLogsTable
-              attendanceId={todayAttendance?.id}
-            />
-          
+          <LocationLogsTable attendanceId={todayAttendance?.id} />
         </motion.div>
 
         <motion.div
