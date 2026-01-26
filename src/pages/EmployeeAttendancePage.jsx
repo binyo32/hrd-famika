@@ -18,13 +18,22 @@ import {
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
-import { LogIn, LogOut, CalendarClock, History, RefreshCw } from "lucide-react";
+import {
+  LogIn,
+  LogOut,
+  CalendarClock,
+  History,
+  RefreshCw,
+  MapPin,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { compressImage } from "../lib/compressImage";
 import LocationPermissionDialog from "../components/employee/LocationPermissionDialog";
 import CheckInDialog from "../components/employee/CheckInDialog";
 import ConfirmCheckoutDialog from "../components/employee/ConfirmCheckoutDialog";
+import UpdateLocationDialog from "../components/employee/attendance/UpdateLocationDialog";
+import LocationLogsTable from "../components/employee/attendance/LocationLogsTable";
 
 const EmployeeAttendancePage = () => {
   const { user } = useAuth();
@@ -54,6 +63,7 @@ const EmployeeAttendancePage = () => {
   const [projectText, setProjectText] = useState("");
   const [liveLocation, setLiveLocation] = useState(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
+  const [showUpdateLocation, setShowUpdateLocation] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -417,6 +427,14 @@ const EmployeeAttendancePage = () => {
           loading={loading.checkInOut}
         />
       )}
+      <UpdateLocationDialog
+        open={showUpdateLocation}
+        onClose={() => setShowUpdateLocation(false)}
+        attendanceId={todayAttendance?.id}
+        employeeId={user?.id}
+        liveLocation={liveLocation}
+        liveAddress={liveAddress}
+      />
 
       <div className="space-y-8">
         <motion.div
@@ -482,6 +500,7 @@ const EmployeeAttendancePage = () => {
                       ).toLocaleTimeString("id-ID")}
                     </p>
                   )}
+                 
                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <Button
                       onClick={() => setShowCheckInFlow(true)}
@@ -492,6 +511,16 @@ const EmployeeAttendancePage = () => {
                         ? "Memproses..."
                         : "Check In"}
                     </Button>
+                    {todayAttendance?.check_in_time &&
+                      !todayAttendance?.check_out_time && (
+                        <Button
+                          variant="orange"
+                          onClick={() => setShowUpdateLocation(true)}
+                          className="flex-1 py-6">
+                          <MapPin className="mr-2 h-5 w-5" />
+                          Update Lokasi Kerja
+                        </Button>
+                      )}
                     <Button
                       onClick={() => setShowCheckoutConfirm(true)}
                       disabled={!canCheckOut || loading.checkInOut}
@@ -548,6 +577,16 @@ const EmployeeAttendancePage = () => {
               )}
             </CardContent>
           </Card>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}>
+         
+            <LocationLogsTable
+              attendanceId={todayAttendance?.id}
+            />
+          
         </motion.div>
 
         <motion.div
