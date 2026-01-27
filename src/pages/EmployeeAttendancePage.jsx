@@ -501,7 +501,17 @@ const EmployeeAttendancePage = () => {
                       ).toLocaleTimeString("id-ID")}
                     </p>
                   )}
-
+  {/* button */}
+                    {todayAttendance?.check_in_time &&
+                      !todayAttendance?.check_out_time && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowUpdateLocation(true)}
+                          className="w-full py-4">
+                          <MapPin className="mr-2 h-5 w-5" />
+                          Update Lokasi Kerja
+                        </Button>
+                      )}
                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <Button
                       onClick={() => setShowCheckInFlow(true)}
@@ -512,17 +522,7 @@ const EmployeeAttendancePage = () => {
                         ? "Memproses..."
                         : "Check In"}
                     </Button>
-                    {/* button */}
-                    {/* {todayAttendance?.check_in_time &&
-                      !todayAttendance?.check_out_time && (
-                        <Button
-                          variant="orange"
-                          onClick={() => setShowUpdateLocation(true)}
-                          className="flex-1 py-6">
-                          <MapPin className="mr-2 h-5 w-5" />
-                          Update Lokasi Kerja
-                        </Button>
-                      )} */}
+                  
                     <Button
                       onClick={() => setShowCheckoutConfirm(true)}
                       disabled={!canCheckOut || loading.checkInOut}
@@ -580,13 +580,12 @@ const EmployeeAttendancePage = () => {
             </CardContent>
           </Card>
         </motion.div>
-        {/* tabel */}
-        {/* <motion.div
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}>
           <LocationLogsTable attendanceId={todayAttendance?.id} />
-        </motion.div> */}
+        </motion.div>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
