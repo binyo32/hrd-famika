@@ -16,6 +16,7 @@ import {
   Search,
   MessageSquare,
   ThumbsUp,
+  File,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.js?url";
+import AnnouncementPdfDialog from "../components/employee/AnnouncementPdfDialog";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -36,6 +38,8 @@ const EmployeeDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [numPagesMap, setNumPagesMap] = useState({});
+  const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
+  const [activePdf, setActivePdf] = useState(null);
   const onPdfLoadSuccess =
     (annId) =>
     ({ numPages }) => {
@@ -95,16 +99,15 @@ const EmployeeDashboard = () => {
     const filtered = allAnnouncements.filter(
       (ann) =>
         ann.title.toLowerCase().includes(lowercasedSearchTerm) ||
-        ann.content.toLowerCase().includes(lowercasedSearchTerm)
+        ann.content.toLowerCase().includes(lowercasedSearchTerm),
     );
     setAnnouncements(filtered);
   }, [searchTerm, allAnnouncements]);
 
   const handleFeatureNotImplemented = () => {
     toast({
-      title: "🚧 Fitur Belum Tersedia 🚧",
-      description:
-        "Fitur ini belum tersedia. ",
+      title: " Fitur Belum Tersedia ",
+      description: "Fitur ini belum tersedia. ",
       variant: "default",
     });
   };
@@ -140,7 +143,7 @@ const EmployeeDashboard = () => {
 
     try {
       const announcementToUpdate = newAllAnnouncements.find(
-        (a) => a.id === announcementId
+        (a) => a.id === announcementId,
       );
       const { error } = await supabase
         .from("announcements")
@@ -151,8 +154,7 @@ const EmployeeDashboard = () => {
         setAllAnnouncements(originalAllAnnouncements);
         toast({
           title: "Error",
-          description:
-            "Gagal memperbarui suka. Pastikan kolom 'liked_by' (tipe jsonb) ada di tabel announcements.",
+          description: "Gagal memperbarui suka.",
           variant: "destructive",
         });
         console.error("Like error:", error);
@@ -241,7 +243,7 @@ const EmployeeDashboard = () => {
                                     year: "numeric",
                                     hour: "2-digit",
                                     minute: "2-digit",
-                                  }
+                                  },
                                 )}
                                 {ann.updated_at &&
                                   new Date(ann.updated_at).getTime() !==
@@ -259,51 +261,23 @@ const EmployeeDashboard = () => {
                             {ann.content}
                           </p>
                         </CardContent>
-                        {pdfUrl && (
-                          <div className="px-4 sm:px-6 pb-4">
-                            <div className="flex justify-end gap-2 mb-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => zoomOut(ann.id)}>
-                                −
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => zoomIn(ann.id)}>
-                                +
-                              </Button>
-                            </div>
 
-                            <div className="max-h-[35vh] overflow-y-auto rounded-xl border bg-muted/30 p-2">
-                              <Document
-                                file={pdfUrl}
-                                onLoadSuccess={onPdfLoadSuccess(ann.id)}
-                                loading="Memuat PDF..."
-                                error="Gagal memuat PDF">
-                                {Array.from(
-                                  new Array(numPagesMap[ann.id] || 0),
-                                  (_, i) => (
-                                    <div
-                                      key={i}
-                                      className="mb-6 flex justify-center">
-                                      <Page
-                                        pageNumber={i + 1}
-                                        scale={zoomMap[ann.id] || 1}
-                                        width={isMobile ? undefined : 520}
-                                        renderTextLayer={false}
-                                        renderAnnotationLayer={false}
-                                        className="rounded-lg shadow-md bg-white"
-                                      />
-                                    </div>
-                                  )
-                                )}
-                              </Document>
-                            </div>
+                        {pdfUrl && (
+                          <div className="px-4 sm:px-6 pb-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setActivePdf({
+                                  url: pdfUrl,
+                                  title: ann.title,
+                                });
+                                setPdfDialogOpen(true);
+                              }}>
+                              <File className="h-4 w-4 mr-2" /> Lihat Lampiran PDF
+                            </Button>
                           </div>
                         )}
-
                         <CardFooter className="flex justify-start items-center pt-4 border-t">
                           <div className="flex space-x-4 text-muted-foreground">
                             <Button
@@ -354,6 +328,12 @@ const EmployeeDashboard = () => {
           </AnimatePresence>
         )}
       </div>
+      <AnnouncementPdfDialog
+        open={pdfDialogOpen}
+        onOpenChange={setPdfDialogOpen}
+        pdfUrl={activePdf?.url}
+        title={activePdf?.title}
+      />
     </Layout>
   );
 };
