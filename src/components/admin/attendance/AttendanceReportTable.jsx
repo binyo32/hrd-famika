@@ -88,7 +88,14 @@ const AttendanceReportTable = ({
               onSortChange={onSortChange}
             />
             <TableHead>NIK</TableHead>
-            <TableHead>Direct PM</TableHead>
+            {/* <TableHead>Direct PM</TableHead> */}
+             <SortableTh
+              label="Direct PM"
+              column="direct_pm"
+              sort={sort}
+              onSortChange={onSortChange}
+            />
+            <TableHead>Keterangan/Project</TableHead>
             <TableHead>Tanggal</TableHead>
             <SortableTh
               label="Check In"
@@ -131,6 +138,7 @@ const AttendanceReportTable = ({
                 <TableCell>{record.employee?.name || "N/A"}</TableCell>
                 <TableCell>{record.employee?.nik || "N/A"}</TableCell>
                 <TableCell>{record.direct_pm?.name || "N/A"}</TableCell>
+                <TableCell>{record.project || "N/A"}</TableCell>
                 <TableCell>
                   {new Date(record.attendance_date).toLocaleDateString("id-ID")}
                 </TableCell>

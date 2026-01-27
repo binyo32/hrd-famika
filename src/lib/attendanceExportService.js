@@ -11,6 +11,7 @@ export const exportAttendanceToExcel = ({ records, startDate, endDate }) => {
   "Nama Karyawan": row.employee?.name || "-",
   NIK: row.employee?.nik || "-",
   "Nama PM": row.direct_pm?.name || "-",
+  "Keterangan/Project": row.project || "-",
   "Check In": formatTime(row.check_in_time),
   "Check Out": formatTime(row.check_out_time),
   "Total Jam Kerja": calculateWorkHours(
@@ -30,6 +31,7 @@ export const exportAttendanceToExcel = ({ records, startDate, endDate }) => {
   { wch: 25 },
   { wch: 15 },
   { wch: 25 },
+  { wch: 12 },
   { wch: 12 },
   { wch: 12 },
   { wch: 18 },

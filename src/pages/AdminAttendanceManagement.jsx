@@ -448,6 +448,10 @@ const AdminAttendanceManagement = () => {
           aVal = a.employee?.name || "";
           bVal = b.employee?.name || "";
           break;
+        case "direct_pm":
+          aVal = a.direct_pm?.name || "";
+          bVal = b.direct_pm?.name || "";
+          break;
         case "nik":
           aVal = a.employee?.nik || "";
           bVal = b.employee?.nik || "";
