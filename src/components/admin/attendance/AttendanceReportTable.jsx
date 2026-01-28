@@ -154,8 +154,14 @@ const AttendanceReportTable = ({
                 <TableCell>{record.direct_pm?.name || "N/A"}</TableCell>
                 <TableCell>{record.project || "N/A"}</TableCell>
                 <TableCell>
-                  {new Date(record.attendance_date).toLocaleDateString("id-ID") || "N/A"}
+                  {record.attendance_date &&
+                  !isNaN(new Date(record.attendance_date).getTime())
+                    ? new Date(record.attendance_date).toLocaleDateString(
+                        "id-ID",
+                      )
+                    : "N/A"}
                 </TableCell>
+
                 <TableCell>
                   {record.check_in_time
                     ? new Date(record.check_in_time).toLocaleTimeString(
@@ -165,7 +171,7 @@ const AttendanceReportTable = ({
                           minute: "2-digit",
                         },
                       )
-                    : "belum cek-in"}
+                    : "belum Check-in"}
                 </TableCell>
                 <TableCell>
                   {record.check_out_time

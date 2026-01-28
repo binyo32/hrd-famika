@@ -39,6 +39,7 @@ import AttendanceMapTab from "@/components/admin/attendance/AttendanceMapTab";
 import { exportAttendanceToExcel } from "@/lib/attendanceExportService";
 import Pagination from "../components/ui/Pagination";
 import AttendanceSetting from "../components/admin/attendance/AttendanceSetting";
+import AttendanceSummaryCards from "../components/admin/attendance/AttendanceSummaryCards";
 
 const AdminAttendanceManagement = () => {
   const { user } = useAuth();
@@ -46,6 +47,9 @@ const AdminAttendanceManagement = () => {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [attendanceStatuses, setAttendanceStatuses] = useState([]);
+  const [checkinFilter, setCheckinFilter] = useState("checked");
+  // checked | unchecked
+
   const [loading, setLoading] = useState({
     records: false,
     employees: false,
@@ -431,6 +435,42 @@ const AdminAttendanceManagement = () => {
     const search = searchTerm.toLowerCase();
     return employeeName.includes(search) || employeeNik.includes(search);
   });
+  const checkedInEmployeeIds = React.useMemo(() => {
+    return new Set(attendanceRecords.map((r) => r.employee_id));
+  }, [attendanceRecords]);
+
+  const uncheckedEmployees = React.useMemo(() => {
+    return employees.filter((emp) => !checkedInEmployeeIds.has(emp.id));
+  }, [employees, checkedInEmployeeIds]);
+  const uncheckedEmployeeRecords = React.useMemo(() => {
+    return uncheckedEmployees.map((emp) => ({
+      id: `unchecked-${emp.id}`,
+      employee_id: emp.id,
+      employee: {
+        name: emp.name,
+        nik: emp.nik,
+      },
+      attendance_date: filterStartDate + " - " + filterEndDate,
+      check_in_time: null,
+      check_out_time: null,
+      attendance_statuses: { name: "Belum Check-in" },
+      isUnchecked: true,
+    }));
+  }, [uncheckedEmployees, filterStartDate, filterEndDate]);
+  const filteredUncheckedEmployeeRecords = React.useMemo(() => {
+  const search = searchTerm.toLowerCase();
+
+  if (!search) return uncheckedEmployeeRecords;
+
+  return uncheckedEmployeeRecords.filter((record) => {
+    const name = record.employee?.name?.toLowerCase() || "";
+    const nik = record.employee?.nik?.toLowerCase() || "";
+
+    return name.includes(search) || nik.includes(search);
+  });
+}, [uncheckedEmployeeRecords, searchTerm]);
+
+
   const getWorkMinutes = (r) => {
     if (!r.check_in_time || !r.check_out_time) return 0;
     return (new Date(r.check_out_time) - new Date(r.check_in_time)) / 60000;
@@ -482,10 +522,24 @@ const AdminAttendanceManagement = () => {
 
     return data;
   }, [filteredRecords, sort]);
+ const finalReportRecords = React.useMemo(() => {
+  if (checkinFilter === "unchecked") {
+    return filteredUncheckedEmployeeRecords;
+  }
+  return sortedRecords;
+}, [
+  checkinFilter,
+  filteredUncheckedEmployeeRecords,
+  sortedRecords,
+]);
+
   const pagedRecords = React.useMemo(() => {
+    const source =
+      currentTab === "reports" ? finalReportRecords : sortedRecords;
+
     const start = (page - 1) * pageSize;
-    return sortedRecords.slice(start, start + pageSize);
-  }, [sortedRecords, page, pageSize]);
+    return source.slice(start, start + pageSize);
+  }, [currentTab, finalReportRecords, sortedRecords, page, pageSize]);
 
   const tabItems = [
     { id: "daily_recap", label: "Rekap Harian", icon: CalendarDays },
@@ -501,7 +555,7 @@ const AdminAttendanceManagement = () => {
     },
   ];
 
-  const renderContent = () => { 
+  const renderContent = () => {
     switch (currentTab) {
       case "daily_recap":
         return (
@@ -583,6 +637,26 @@ const AdminAttendanceManagement = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-sm font-medium">
+                    Status Kehadiran
+                  </label>
+                  <Select
+                    value={checkinFilter}
+                    onValueChange={(value) => {
+                      setCheckinFilter(value);
+                      setPage(1);
+                    }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="checked">Sudah Check-in</SelectItem>
+                      <SelectItem value="unchecked">Belum Check-in</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="relative flex-1">
                   <Label htmlFor="searchTermRecap">
                     Cari Karyawan (Nama/NIK)
@@ -618,7 +692,10 @@ const AdminAttendanceManagement = () => {
               </div>
 
               <Button
+                disabled={checkinFilter === "unchecked"}
                 onClick={() => {
+                  if (checkinFilter === "unchecked") return;
+
                   try {
                     exportAttendanceToExcel({
                       records: sortedRecords,
@@ -638,11 +715,15 @@ const AdminAttendanceManagement = () => {
                     });
                   }
                 }}
-                className="my-4 bg-gradient-to-r from-green-500 to-teal-600 text-white">
+                className={`my-4 bg-gradient-to-r from-green-500 to-teal-600 text-white
+    ${checkinFilter === "unchecked" ? "opacity-50 cursor-not-allowed" : ""}`}>
                 Ekspor Laporan (Excel)
               </Button>
 
-              <AttendanceSummaryCards summary={attendanceSummary} />
+              <AttendanceSummaryCards
+                summary={attendanceSummary}
+                mode={checkinFilter}
+              />
               <AttendanceReportTable
                 records={pagedRecords}
                 loading={loading.records}
@@ -653,7 +734,7 @@ const AdminAttendanceManagement = () => {
                 }}
                 page={page}
                 pageSize={pageSize}
-                totalRecords={sortedRecords.length}
+                totalRecords={finalReportRecords.length}
                 onPageSizeChange={(size) => {
                   setPageSize(size);
                   setPage(1);
@@ -663,7 +744,7 @@ const AdminAttendanceManagement = () => {
               <Pagination
                 page={page}
                 pageSize={pageSize}
-                totalRecords={sortedRecords.length} // <-- total setelah sort
+                totalRecords={finalReportRecords.length}
                 onPageChange={setPage}
                 className="mt-4"
               />
@@ -709,47 +790,25 @@ const AdminAttendanceManagement = () => {
         return null;
     }
   };
-  const attendanceSummary = {
-    totalCheckIn: filteredRecords.filter((r) => r.check_in_time).length,
-    totalCheckOut: filteredRecords.filter((r) => r.check_out_time).length,
-    hadirByCheckIn: filteredRecords.filter((r) => r.check_in_time).length,
-  };
-  const AttendanceSummaryCards = ({ summary }) => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-      <Card>
-        <CardContent className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">Total Check-in</p>
-            <p className="text-2xl font-bold">{summary.totalCheckIn}</p>
-          </div>
-          <Fingerprint className="h-8 w-8 text-blue-500" />
-        </CardContent>
-      </Card>
+  const attendanceSummary = React.useMemo(() => {
+    // MODE: BELUM CHECK-IN
+    if (currentTab === "reports" && checkinFilter === "unchecked") {
+      const totalUnchecked = uncheckedEmployeeRecords.length;
 
-      <Card>
-        <CardContent className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">Total Check-out</p>
-            <p className="text-2xl font-bold">{summary.totalCheckOut}</p>
-          </div>
-          <CalendarDays className="h-8 w-8 text-green-500" />
-        </CardContent>
-      </Card>
+      return {
+        totalCheckIn: totalUnchecked, // jumlah belum check-in
+        totalCheckOut: 0, // selalu 0
+        hadirByCheckIn: totalUnchecked, // dianggap tidak hadir
+      };
+    }
 
-      <Card>
-        <CardContent className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">Kehadiran</p>
-            <p className="text-2xl font-bold">{summary.hadirByCheckIn}</p>
-            <p className="text-xs text-muted-foreground">
-              berdasarkan check-in
-            </p>
-          </div>
-          <UserPlus className="h-8 w-8 text-purple-500" />
-        </CardContent>
-      </Card>
-    </div>
-  );
+    // MODE: SUDAH CHECK-IN (perilaku lama)
+    return {
+      totalCheckIn: filteredRecords.filter((r) => r.check_in_time).length,
+      totalCheckOut: filteredRecords.filter((r) => r.check_out_time).length,
+      hadirByCheckIn: filteredRecords.filter((r) => r.check_in_time).length,
+    };
+  }, [currentTab, checkinFilter, uncheckedEmployeeRecords, filteredRecords]);
 
   return (
     <Layout>
