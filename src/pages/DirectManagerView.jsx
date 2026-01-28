@@ -152,7 +152,6 @@ const DirectManagerView = () => {
         "postgres_changes",
         { event: "*", schema: "public", table: "employees" },
         (payload) => {
-          console.log("Change received!", payload);
           fetchInitialData();
         }
       )

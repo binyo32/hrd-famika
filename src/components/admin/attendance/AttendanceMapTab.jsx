@@ -23,7 +23,8 @@ import { Button } from "@/components/ui/button";
 import { ChevronsUpDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import AttendanceMap from "./AttendanceMap";
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 const AttendanceMapTab = ({
   records,
@@ -55,6 +56,53 @@ const AttendanceMapTab = ({
       checkOutCount,
     };
   }, [records]);
+  const [recordsWithLogs, setRecordsWithLogs] = useState([]);
+  useEffect(() => {
+  const fetchLogs = async () => {
+    if (!records || records.length === 0) {
+      setRecordsWithLogs([]);
+      return;
+    }
+
+    const attendanceIds = records.map((r) => r.id);
+
+    const { data, error } = await supabase
+      .from("attendance_location_logs")
+      .select(`
+        attendance_id,
+        latitude,
+        longitude,
+        activity,
+        recorded_at,
+        address
+      `)
+      .in("attendance_id", attendanceIds)
+      .order("recorded_at", { ascending: true });
+
+    if (error) {
+      console.error("Failed fetch location logs:", error);
+      setRecordsWithLogs(records);
+      return;
+    }
+
+    // group logs by attendance_id
+    const logsByAttendance = data.reduce((acc, log) => {
+      if (!acc[log.attendance_id]) acc[log.attendance_id] = [];
+      acc[log.attendance_id].push(log);
+      return acc;
+    }, {});
+
+    // merge ke records
+    const merged = records.map((r) => ({
+      ...r,
+      attendance_location_logs: logsByAttendance[r.id] || [],
+    }));
+
+    setRecordsWithLogs(merged);
+  };
+
+  fetchLogs();
+}, [records]);
   return (
     <Card className="relative">
       <CardHeader>
@@ -149,7 +197,7 @@ const AttendanceMapTab = ({
 
         {/* ===== MAP ===== */}
         <div className="relative z-0">
-          <AttendanceMap records={records} />
+       <AttendanceMap records={recordsWithLogs} />
         </div>
       </CardContent>
     </Card>

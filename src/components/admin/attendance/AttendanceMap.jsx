@@ -45,7 +45,6 @@ const checkOutIcon = new L.Icon({
 // ===== AUTO FIT =====
 const FitBounds = ({ points }) => {
   const map = useMap();
-
   if (!points.length) return null;
 
   map.fitBounds(L.latLngBounds(points), {
@@ -57,22 +56,57 @@ const FitBounds = ({ points }) => {
 };
 
 const AttendanceMap = ({ records = [] }) => {
-  const points = [];
+  // ===== ALL POINTS FOR FIT =====
+  const allPoints = [];
 
   records.forEach((r) => {
-    if (r.loc_checkin?.lat && r.loc_checkin?.lng)
-      points.push([r.loc_checkin.lat, r.loc_checkin.lng]);
-    if (r.loc_checkout?.lat && r.loc_checkout?.lng)
-      points.push([r.loc_checkout.lat, r.loc_checkout.lng]);
-  });
+    if (r.loc_checkin?.lat && r.loc_checkin?.lng) {
+      allPoints.push([r.loc_checkin.lat, r.loc_checkin.lng]);
+    }
 
+    (r.attendance_location_logs || []).forEach((log) => {
+      allPoints.push([log.latitude, log.longitude]);
+    });
+
+    if (r.loc_checkout?.lat && r.loc_checkout?.lng) {
+      allPoints.push([r.loc_checkout.lat, r.loc_checkout.lng]);
+    }
+  });
+const PopupContent = ({ name, label, time, address }) => (
+  <div style={{ minWidth: 220, lineHeight: 1.4 }}>
+    <strong>{name}</strong>
+    <hr style={{ margin: "6px 0" }} />
+
+    <div style={{ fontSize: 12, fontWeight: 600 }}>
+      {label} •{" "}
+      {time
+        ? new Date(time).toLocaleTimeString("id-ID", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "-"}
+    </div>
+
+    {address && (
+      <div
+        style={{
+          fontSize: 11,
+          marginTop: 4,
+          color: "#555",
+          whiteSpace: "normal",
+        }}
+      >
+        {address}
+      </div>
+    )}
+  </div>
+);
   return (
     <MapContainer
       center={[-6.2, 106.816666]}
       zoom={5}
       scrollWheelZoom
-      className="h-[520px] w-full rounded-xl border"
-    >
+      className="h-[520px] w-full rounded-xl border">
       <TileLayer
         url={
           document.documentElement.classList.contains("dark")
@@ -82,15 +116,13 @@ const AttendanceMap = ({ records = [] }) => {
         attribution="© OpenStreetMap © CARTO"
       />
 
-      <FitBounds points={points} />
+      <FitBounds points={allPoints} />
 
-      {/* ===== CLUSTER GROUP ===== */}
       <MarkerClusterGroup
         chunkedLoading
         maxClusterRadius={50}
         spiderfyOnMaxZoom
-        showCoverageOnHover={false}
-      >
+        showCoverageOnHover={false}>
         {records.map((r) => {
           const ci = r.loc_checkin;
           const co = r.loc_checkout;
@@ -98,15 +130,23 @@ const AttendanceMap = ({ records = [] }) => {
           const hasCI = ci?.lat && ci?.lng;
           const hasCO = co?.lat && co?.lng;
 
+          // ===== BUILD TIMELINE LINE =====
+          const linePoints = [];
+
+          if (hasCI) linePoints.push([ci.lat, ci.lng]);
+
+          (r.attendance_location_logs || []).forEach((log) => {
+            linePoints.push([log.latitude, log.longitude]);
+          });
+
+          if (hasCO) linePoints.push([co.lat, co.lng]);
+
           return (
             <div key={r.id}>
-              {/* GARIS */}
-              {hasCI && hasCO && (
+              {/* ===== POLYLINE TIMELINE ===== */}
+              {linePoints.length > 1 && (
                 <Polyline
-                  positions={[
-                    [ci.lat, ci.lng],
-                    [co.lat, co.lng],
-                  ]}
+                  positions={linePoints}
                   pathOptions={{
                     color: "#7c3aed",
                     weight: 2,
@@ -115,45 +155,47 @@ const AttendanceMap = ({ records = [] }) => {
                 />
               )}
 
-              {/* CHECK-IN */}
+              {/* ===== CHECK-IN ===== */}
               {hasCI && (
-                <Marker
-                  position={[ci.lat, ci.lng]}
-                  icon={checkInIcon}
-                >
-                  <Popup >
-                    <strong>{r.employee?.name}</strong>
-                    <br />
-                    <span className="text-blue-600">
-                      Check-in
-                    </span>
-                    <br />
-                    {r.check_in_time
-                      ? new Date(
-                          r.check_in_time
-                        ).toLocaleTimeString()
-                      : "-"}
-                  </Popup>
+                <Marker position={[ci.lat, ci.lng]} icon={checkInIcon}>
+                 <Popup>
+  <PopupContent
+    name={r.employee?.name}
+    label="Check-in"
+    time={r.check_in_time}
+    address={ci.address}
+  />
+</Popup>
                 </Marker>
               )}
 
-              {/* CHECK-OUT */}
-              {hasCO && (
-                <Marker
-                  position={[co.lat, co.lng]}
-                  icon={checkOutIcon}
-                >
+              {/* ===== PROGRESS ===== */}
+              {(r.attendance_location_logs || []).map((log, idx) => (
+                <CircleMarker
+                  key={idx}
+                  center={[log.latitude, log.longitude]}
+                  radius={6}
+                  pathOptions={{ color: "#f59e0b" }}>
                   <Popup>
                     <strong>{r.employee?.name}</strong>
                     <br />
-                    <span className="text-red-600">
-                      Check-out
-                    </span>
+                    {log.activity || "Progres"}
+                    <br />
+                    {new Date(log.recorded_at).toLocaleTimeString("id-ID")}
+                  </Popup>
+                </CircleMarker>
+              ))}
+
+              {/* ===== CHECK-OUT ===== */}
+              {hasCO && (
+                <Marker position={[co.lat, co.lng]} icon={checkOutIcon}>
+                  <Popup>
+                    <strong>{r.employee?.name}</strong>
+                    <br />
+                    <span className="text-red-600">Check-out</span>
                     <br />
                     {r.check_out_time
-                      ? new Date(
-                          r.check_out_time
-                        ).toLocaleTimeString()
+                      ? new Date(r.check_out_time).toLocaleTimeString("id-ID")
                       : "-"}
                   </Popup>
                 </Marker>

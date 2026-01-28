@@ -16,9 +16,23 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-const getWorkMinutes = (r) => {
-  if (!r.check_in_time || !r.check_out_time) return 0;
-  return (new Date(r.check_out_time) - new Date(r.check_in_time)) / 60000;
+const getWorkDuration = (checkIn, checkOut) => {
+  if (!checkIn || !checkOut) return "-";
+
+  const inDate = new Date(checkIn);
+  const outDate = new Date(checkOut);
+
+  inDate.setSeconds(0, 0);
+  outDate.setSeconds(0, 0);
+
+  const diffMs = outDate - inDate;
+  if (diffMs <= 0) return "0 jam 0 menit";
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${hours} jam ${minutes} menit`;
 };
 const SortableTh = ({ label, column, sort, onSortChange }) => {
   const active = sort.key === column;
@@ -89,7 +103,7 @@ const AttendanceReportTable = ({
             />
             <TableHead>NIK</TableHead>
             {/* <TableHead>Direct PM</TableHead> */}
-             <SortableTh
+            <SortableTh
               label="Direct PM"
               column="direct_pm"
               sort={sort}
@@ -140,7 +154,7 @@ const AttendanceReportTable = ({
                 <TableCell>{record.direct_pm?.name || "N/A"}</TableCell>
                 <TableCell>{record.project || "N/A"}</TableCell>
                 <TableCell>
-                  {new Date(record.attendance_date).toLocaleDateString("id-ID")}
+                  {new Date(record.attendance_date).toLocaleDateString("id-ID") || "N/A"}
                 </TableCell>
                 <TableCell>
                   {record.check_in_time
@@ -149,9 +163,9 @@ const AttendanceReportTable = ({
                         {
                           hour: "2-digit",
                           minute: "2-digit",
-                        }
+                        },
                       )
-                    : "-"}
+                    : "belum cek-in"}
                 </TableCell>
                 <TableCell>
                   {record.check_out_time
@@ -160,7 +174,7 @@ const AttendanceReportTable = ({
                         {
                           hour: "2-digit",
                           minute: "2-digit",
-                        }
+                        },
                       )
                     : "-"}
                 </TableCell>
@@ -170,14 +184,10 @@ const AttendanceReportTable = ({
                 </TableCell>
                 <TableCell>
                   {record.check_in_time && record.check_out_time
-                    ? (() => {
-                        const diff =
-                          new Date(record.check_out_time) -
-                          new Date(record.check_in_time);
-                        const h = Math.floor(diff / 3600000);
-                        const m = Math.floor((diff % 3600000) / 60000);
-                        return `${h} jam ${m} menit`;
-                      })()
+                    ? getWorkDuration(
+                        record.check_in_time,
+                        record.check_out_time,
+                      )
                     : "-"}
                 </TableCell>
               </TableRow>

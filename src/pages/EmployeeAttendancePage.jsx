@@ -34,6 +34,7 @@ import CheckInDialog from "../components/employee/CheckInDialog";
 import ConfirmCheckoutDialog from "../components/employee/ConfirmCheckoutDialog";
 import UpdateLocationDialog from "../components/employee/attendance/UpdateLocationDialog";
 import LocationLogsTable from "../components/employee/attendance/LocationLogsTable";
+import CheckoutBlockedDialog from "../components/employee/attendance/CheckoutBlockedDialog";
 
 const EmployeeAttendancePage = () => {
   const { user } = useAuth();
@@ -64,6 +65,7 @@ const EmployeeAttendancePage = () => {
   const [liveLocation, setLiveLocation] = useState(null);
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [showUpdateLocation, setShowUpdateLocation] = useState(false);
+  const [showCheckoutBlocked, setShowCheckoutBlocked] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -250,7 +252,7 @@ const EmployeeAttendancePage = () => {
     try {
       const locPayload = getCurrentLiveLocationPayload();
 
-      const { data, error } = await supabase.rpc("check_out_employee", {
+      const { data, error } = await supabase.rpc("check_out_employee_with_time", {
         p_attendance_id: todayAttendance.id,
         p_loc: locPayload,
       });
@@ -262,8 +264,18 @@ const EmployeeAttendancePage = () => {
       setShowCheckoutConfirm(false);
 
       toast({
+        variant: "success",
         title: "Check-Out Berhasil",
-        description: "Jam server digunakan",
+        description: "Anda telah menyelesaikan absensi hari ini.",
+      });
+    } catch (err) {
+      setShowCheckoutBlocked(true);
+      setShowCheckoutConfirm(false);
+      toast({
+        variant: "destructive",
+        title: "Check-Out Gagal",
+        description:
+          err.message || "Checkout sudah melewati batas waktu (17:00 UTC)",
       });
     } finally {
       setLoading((p) => ({ ...p, checkInOut: false }));
@@ -275,6 +287,16 @@ const EmployeeAttendancePage = () => {
     todayAttendance &&
     todayAttendance.check_in_time &&
     !todayAttendance.check_out_time;
+  const isBefore17UTC = () => {
+    const now = new Date();
+    return now.getUTCHours() < 17;
+  };
+
+  const canCheckoutStrict =
+    todayAttendance &&
+    todayAttendance.check_in_time &&
+    !todayAttendance.check_out_time &&
+    isBefore17UTC();
 
   const [locationAllowed, setLocationAllowed] = useState(false);
   const [location, setLocation] = useState(null);
@@ -391,6 +413,10 @@ const EmployeeAttendancePage = () => {
 
   return (
     <Layout>
+      <CheckoutBlockedDialog
+        open={showCheckoutBlocked}
+        onClose={() => setShowCheckoutBlocked(false)}
+      />
       {showLocationModal && (
         <LocationPermissionDialog
           open={showLocationModal}
@@ -501,17 +527,24 @@ const EmployeeAttendancePage = () => {
                       ).toLocaleTimeString("id-ID")}
                     </p>
                   )}
-  {/* button */}
-                    {todayAttendance?.check_in_time &&
-                      !todayAttendance?.check_out_time && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowUpdateLocation(true)}
-                          className="w-full py-4">
-                          <MapPin className="mr-2 h-5 w-5" />
-                          Update Lokasi Kerja
-                        </Button>
-                      )}
+                  {/* button */}
+                  {todayAttendance?.check_in_time &&
+                    !todayAttendance?.check_out_time &&
+                    canCheckoutStrict && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          if (!canCheckoutStrict) {
+                            setShowCheckoutBlocked(true);
+                            return;
+                          }
+                          setShowUpdateLocation(true);
+                        }}
+                        className="w-full py-4">
+                        <MapPin className="mr-2 h-5 w-5" />
+                        Update Lokasi Kerja
+                      </Button>
+                    )}
                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <Button
                       onClick={() => setShowCheckInFlow(true)}
@@ -522,15 +555,19 @@ const EmployeeAttendancePage = () => {
                         ? "Memproses..."
                         : "Check In"}
                     </Button>
-                  
+
                     <Button
-                      onClick={() => setShowCheckoutConfirm(true)}
+                      onClick={() => {
+                        if (!canCheckoutStrict) {
+                          setShowCheckoutBlocked(true);
+                          return;
+                        }
+                        setShowCheckoutConfirm(true);
+                      }}
                       disabled={!canCheckOut || loading.checkInOut}
-                      className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-lg py-6">
-                      <LogOut className="mr-2 h-5 w-5" />{" "}
-                      {loading.checkInOut && canCheckOut
-                        ? "Memproses..."
-                        : "Check Out"}
+                      className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-lg py-6">
+                      <LogOut className="mr-2 h-5 w-5" />
+                      Check Out
                     </Button>
                   </div>
                   {!canCheckIn && !canCheckOut && todayAttendance && (

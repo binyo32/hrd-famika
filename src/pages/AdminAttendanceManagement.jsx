@@ -36,7 +36,6 @@ import AttendanceReportTable from "@/components/admin/attendance/AttendanceRepor
 import ManualAttendanceDialog from "@/components/admin/attendance/ManualAttendanceDialog";
 import { addLog } from "@/lib/activityLogService";
 import AttendanceMapTab from "@/components/admin/attendance/AttendanceMapTab";
-// excel export
 import { exportAttendanceToExcel } from "@/lib/attendanceExportService";
 import Pagination from "../components/ui/Pagination";
 import AttendanceSetting from "../components/admin/attendance/AttendanceSetting";
@@ -464,6 +463,10 @@ const AdminAttendanceManagement = () => {
           aVal = a.check_in_time || "";
           bVal = b.check_in_time || "";
           break;
+        case "checkout":
+          aVal = a.check_out_time || "";
+          bVal = b.check_out_time || "";
+          break;
         case "workhours":
           aVal = getWorkMinutes(a);
           bVal = getWorkMinutes(b);
@@ -498,7 +501,7 @@ const AdminAttendanceManagement = () => {
     },
   ];
 
-  const renderContent = () => {
+  const renderContent = () => { 
     switch (currentTab) {
       case "daily_recap":
         return (
@@ -580,34 +583,6 @@ const AdminAttendanceManagement = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div className="flex-1">
-                  <Label htmlFor="filterEmployeeRecap">
-                    Karyawan (Opsional)
-                  </Label>
-                  <Select
-                    value={filterEmployee || "ALL_EMPLOYEES_PLACEHOLDER"}
-                    onValueChange={(value) =>
-                      setFilterEmployee(
-                        value === "ALL_EMPLOYEES_PLACEHOLDER" ? "" : value,
-                      )
-                    }>
-                    <SelectTrigger id="filterEmployeeRecap">
-                      <SelectValue placeholder="Semua Karyawan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL_EMPLOYEES_PLACEHOLDER">
-                        Semua Karyawan
-                      </SelectItem>
-                      {(employees || [])
-                        .filter((emp) => emp && emp.id)
-                        .map((emp) => (
-                          <SelectItem key={emp.id} value={emp.id}>
-                            {emp.name} ({emp.nik})
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="relative flex-1">
                   <Label htmlFor="searchTermRecap">
                     Cari Karyawan (Nama/NIK)

@@ -34,6 +34,13 @@ const UpdateLocationDialog = ({
       });
       return;
     }
+    if (!note) {
+      toast({
+        title: "Keterangan aktivitas tidak boleh kosong",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setLoading(true);
 
@@ -90,7 +97,7 @@ const UpdateLocationDialog = ({
           </div>
 
           <Textarea
-            placeholder="Keterangan aktivitas pekerjaan"
+            placeholder="Keterangan aktivitas pekerjaan, opsional jika anda berpindah lokasi kerja"
             value={note}
             required
             onChange={(e) => setNote(e.target.value)}

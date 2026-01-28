@@ -14,7 +14,7 @@ export const exportAttendanceToExcel = ({ records, startDate, endDate }) => {
   "Keterangan/Project": row.project || "-",
   "Check In": formatTime(row.check_in_time),
   "Check Out": formatTime(row.check_out_time),
-  "Total Jam Kerja": calculateWorkHours(
+  "Total Jam Kerja": getWorkDuration(
     row.check_in_time,
     row.check_out_time
   ),
@@ -53,30 +53,22 @@ const formatTime = (iso) => {
     minute: "2-digit",
   });
 };
-const calculateWorkHours = (checkIn, checkOut) => {
+const getWorkDuration = (checkIn, checkOut) => {
   if (!checkIn || !checkOut) return "-";
 
-  const start = new Date(checkIn);
-  const end = new Date(checkOut);
+  const inDate = new Date(checkIn);
+  const outDate = new Date(checkOut);
 
-  if (isNaN(start) || isNaN(end)) return "-";
+  inDate.setSeconds(0, 0);
+  outDate.setSeconds(0, 0);
 
-  const diffMs = end - start;
-  if (diffMs <= 0) return "-";
+  const diffMs = outDate - inDate;
+  if (diffMs <= 0) return "0 jam 0 menit";
 
   const totalMinutes = Math.floor(diffMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
 
-  if (hours > 0 && minutes > 0) {
-    return `${hours} jam ${minutes} menit`;
-  }
-
-  if (hours > 0) {
-    return `${hours} jam`;
-  }
-
-  return `${minutes} menit`;
+  return `${hours} jam ${minutes} menit`;
 };
-
 
