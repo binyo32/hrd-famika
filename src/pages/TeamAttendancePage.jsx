@@ -18,6 +18,11 @@ import { Label } from "@/components/ui/label";
 import Layout from "../components/Layout";
 import { motion } from "framer-motion";
 
+const todayISO = () => {
+  const today = new Date();
+  return today.toISOString().split("T")[0]; // YYYY-MM-DD
+};
+
 const TeamAttendancePage = () => {
   const { user } = useAuth();
 
@@ -27,8 +32,10 @@ const TeamAttendancePage = () => {
   // FILTER STATE
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(todayISO());
+  const [dateTo, setDateTo] = useState(todayISO());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(search);
@@ -40,14 +47,17 @@ const TeamAttendancePage = () => {
     if (!user) return;
     fetchAttendance();
   }, [user, debouncedSearch, dateFrom, dateTo]);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, dateFrom, dateTo, pageSize]);
 
   const fetchAttendance = async () => {
-  setLoading(true);
+    setLoading(true);
 
-  let query = supabase
-    .from("attendance_records")
-    .select(
-      `
+    let query = supabase
+      .from("attendance_records")
+      .select(
+        `
       id,
       attendance_date,
       check_in_time,
@@ -65,41 +75,45 @@ const TeamAttendancePage = () => {
       attendance_statuses (
         name
       )
-    `
-    )
-    .eq("direct_pm_id", user.id)
-    .order("attendance_date", { ascending: false });
+    `,
+      )
+      .eq("direct_pm_id", user.id)
+      .order("attendance_date", { ascending: false });
 
-  if (dateFrom) {
-    query = query.gte("attendance_date", dateFrom);
-  }
-
-  if (dateTo) {
-    query = query.lte("attendance_date", dateTo);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Fetch attendance error:", error);
-    setRecords([]);
-  } else {
-    let filteredData = data || [];
-
-    if (debouncedSearch) {
-      const keyword = debouncedSearch.toLowerCase();
-      filteredData = filteredData.filter((item) =>
-        item.employees?.name?.toLowerCase().includes(keyword)
-      );
+    if (dateFrom) {
+      query = query.gte("attendance_date", dateFrom);
     }
 
-    setRecords(filteredData);
-  }
+    if (dateTo) {
+      query = query.lte("attendance_date", dateTo);
+    }
 
-  setLoading(false);
-};
+    const { data, error } = await query;
 
+    if (error) {
+      console.error("Fetch attendance error:", error);
+      setRecords([]);
+    } else {
+      let filteredData = data || [];
 
+      if (debouncedSearch) {
+        const keyword = debouncedSearch.toLowerCase();
+        filteredData = filteredData.filter((item) =>
+          item.employees?.name?.toLowerCase().includes(keyword),
+        );
+      }
+
+      setRecords(filteredData);
+    }
+
+    setLoading(false);
+  };
+  const totalPages = Math.ceil(records.length / pageSize);
+
+  const paginatedRecords = records.slice(
+    (page - 1) * pageSize,
+    page * pageSize,
+  );
   const calculateWorkDuration = (checkIn, checkOut) => {
     if (!checkIn || !checkOut) return "-";
 
@@ -115,6 +129,12 @@ const TeamAttendancePage = () => {
 
     return `${hours} jam ${minutes} menit`;
   };
+  const formatDateID = (date) =>
+    new Date(date).toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
 
   return (
     <Layout>
@@ -133,6 +153,13 @@ const TeamAttendancePage = () => {
       <Card>
         <CardHeader className="space-y-4">
           <CardTitle>Absensi Tim</CardTitle>
+          <p className="text-sm text-muted-foreground mb-3">
+            Absensi{" "}
+            {dateFrom === dateTo
+              ? formatDateID(dateFrom)
+              : `${formatDateID(dateFrom)} – ${formatDateID(dateTo)}`}{" "}
+            sebanyak <span className="font-medium">{records.length}</span> data
+          </p>
 
           {/* FILTER */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -199,12 +226,12 @@ const TeamAttendancePage = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                records.map((record) => (
+                paginatedRecords.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell>
                       {new Date(record.attendance_date).toLocaleDateString(
                         "id-ID",
-                        { timeZone: "UTC" }
+                        { timeZone: "UTC" },
                       )}
                     </TableCell>
 
@@ -216,7 +243,7 @@ const TeamAttendancePage = () => {
                       {record.check_in_time
                         ? new Date(record.check_in_time).toLocaleTimeString(
                             "id-ID",
-                            { hour: "2-digit", minute: "2-digit" }
+                            { hour: "2-digit", minute: "2-digit" },
                           )
                         : "-"}
                     </TableCell>
@@ -225,7 +252,7 @@ const TeamAttendancePage = () => {
                       {record.check_out_time
                         ? new Date(record.check_out_time).toLocaleTimeString(
                             "id-ID",
-                            { hour: "2-digit", minute: "2-digit" }
+                            { hour: "2-digit", minute: "2-digit" },
                           )
                         : "-"}
                     </TableCell>
@@ -266,7 +293,7 @@ const TeamAttendancePage = () => {
                     <TableCell className="font-medium text-center">
                       {calculateWorkDuration(
                         record.check_in_time,
-                        record.check_out_time
+                        record.check_out_time,
                       )}
                     </TableCell>
                   </TableRow>
@@ -274,6 +301,38 @@ const TeamAttendancePage = () => {
               )}
             </TableBody>
           </Table>
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-sm text-muted-foreground">
+              Menampilkan {(page - 1) * pageSize + 1}–
+              {Math.min(page * pageSize, records.length)} dari {records.length}{" "}
+              data
+            </p>
+
+            <div className="flex gap-2">
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="rounded-md border px-2 py-1 text-sm">
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+
+              <button
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="px-3 py-1 border rounded disabled:opacity-50">
+                Prev
+              </button>
+
+              <button
+                disabled={page === totalPages || totalPages === 0}
+                onClick={() => setPage((p) => p + 1)}
+                className="px-3 py-1 border rounded disabled:opacity-50">
+                Next
+              </button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </Layout>

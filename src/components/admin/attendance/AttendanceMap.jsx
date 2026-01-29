@@ -55,8 +55,122 @@ const FitBounds = ({ points }) => {
   return null;
 };
 
+// ===== FLY TO BUTTON =====
+const FlyToButton = ({ lat, lng }) => {
+  const map = useMap();
+
+  return (
+    <button
+      onClick={() => map.flyTo([lat, lng], 17, { duration: 0.6 })}
+      style={{
+        marginTop: 4,
+        fontSize: 11,
+        color: "#2563eb",
+        textDecoration: "underline",
+      }}>
+      Lihat lokasi
+    </button>
+  );
+};
+
+// ===== POPUP TIMELINE =====
+const TimelinePopup = ({ record }) => {
+  const logs = record.attendance_location_logs || [];
+
+  return (
+    <div style={{ minWidth: 240, overflowY: "auto", maxHeight: 400 }}>
+      <strong>{record.employee?.name}</strong>
+      <hr style={{ margin: "6px 0" }} />
+
+      {/* CHECK-IN */}
+      {record.loc_checkin && (
+        <div
+          style={{
+            fontSize: 12,
+            padding: 6,
+            backgroundColor: "#f3f4f6",
+            borderRadius: 4,
+          }}>
+          <b style={{ color: "#08CB00" }}>Check-in</b> •{" "}
+          {record.check_in_time
+            ? new Date(record.check_in_time).toLocaleTimeString("id-ID", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "-"}{" "}
+          <br />
+          {record.loc_checkin && (
+            <div style={{ fontSize: 11, color: "#555" }}>
+              {record.loc_checkin.address}
+            </div>
+          )}
+          <FlyToButton
+            lat={record.loc_checkin.lat}
+            lng={record.loc_checkin.lng}
+          />
+        </div>
+      )}
+      {/* PROGRESS */}
+      {logs.map((log, i) => (
+        <div
+          key={i}
+          style={{
+            fontSize: 12,
+            marginTop: 6,
+            padding: 6,
+            backgroundColor: "#f3f4f6",
+            borderRadius: 4,
+          }}>
+          <b>Update Lokasi Kerja</b> •{" "}
+          {new Date(log.recorded_at).toLocaleTimeString("id-ID", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+          <div style={{ fontSize: 11, color: "#555" }}>
+            <b>{log.activity || "Progres"}</b>
+          </div>
+          <div style={{ fontSize: 11, color: "#555" }}>
+            {log.address || "-"}
+          </div>
+          <FlyToButton lat={log.latitude} lng={log.longitude} />
+        </div>
+      ))}
+
+      {/* CHECK-OUT */}
+      {record.loc_checkout && (
+        <div
+          style={{
+            fontSize: 12,
+            padding: 6,
+            backgroundColor: "#f3f4f6",
+            borderRadius: 4,
+            marginTop: 6,
+          }}>
+          <b style={{ color: "#dc2626" }}>Check-out</b> •{" "} 
+
+          {record.check_out_time
+            ? new Date(record.check_out_time).toLocaleTimeString("id-ID", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "-"}<br />
+               {record.loc_checkout && (
+            <div style={{ fontSize: 11, color: "#555" }}>
+              {record.loc_checkout.address}
+            </div>
+          )}
+          <FlyToButton
+            lat={record.loc_checkout.lat}
+            lng={record.loc_checkout.lng}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ===== MAIN MAP =====
 const AttendanceMap = ({ records = [] }) => {
-  // ===== ALL POINTS FOR FIT =====
   const allPoints = [];
 
   records.forEach((r) => {
@@ -72,35 +186,7 @@ const AttendanceMap = ({ records = [] }) => {
       allPoints.push([r.loc_checkout.lat, r.loc_checkout.lng]);
     }
   });
-const PopupContent = ({ name, label, time, address }) => (
-  <div style={{ minWidth: 220, lineHeight: 1.4 }}>
-    <strong>{name}</strong>
-    <hr style={{ margin: "6px 0" }} />
 
-    <div style={{ fontSize: 12, fontWeight: 600 }}>
-      {label} •{" "}
-      {time
-        ? new Date(time).toLocaleTimeString("id-ID", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "-"}
-    </div>
-
-    {address && (
-      <div
-        style={{
-          fontSize: 11,
-          marginTop: 4,
-          color: "#555",
-          whiteSpace: "normal",
-        }}
-      >
-        {address}
-      </div>
-    )}
-  </div>
-);
   return (
     <MapContainer
       center={[-6.2, 106.816666]}
@@ -127,23 +213,17 @@ const PopupContent = ({ name, label, time, address }) => (
           const ci = r.loc_checkin;
           const co = r.loc_checkout;
 
-          const hasCI = ci?.lat && ci?.lng;
-          const hasCO = co?.lat && co?.lng;
-
-          // ===== BUILD TIMELINE LINE =====
           const linePoints = [];
 
-          if (hasCI) linePoints.push([ci.lat, ci.lng]);
-
-          (r.attendance_location_logs || []).forEach((log) => {
-            linePoints.push([log.latitude, log.longitude]);
-          });
-
-          if (hasCO) linePoints.push([co.lat, co.lng]);
+          if (ci?.lat && ci?.lng) linePoints.push([ci.lat, ci.lng]);
+          (r.attendance_location_logs || []).forEach((log) =>
+            linePoints.push([log.latitude, log.longitude]),
+          );
+          if (co?.lat && co?.lng) linePoints.push([co.lat, co.lng]);
 
           return (
             <div key={r.id}>
-              {/* ===== POLYLINE TIMELINE ===== */}
+              {/* POLYLINE */}
               {linePoints.length > 1 && (
                 <Polyline
                   positions={linePoints}
@@ -155,21 +235,16 @@ const PopupContent = ({ name, label, time, address }) => (
                 />
               )}
 
-              {/* ===== CHECK-IN ===== */}
-              {hasCI && (
+              {/* CHECK-IN */}
+              {ci?.lat && ci?.lng && (
                 <Marker position={[ci.lat, ci.lng]} icon={checkInIcon}>
-                 <Popup>
-  <PopupContent
-    name={r.employee?.name}
-    label="Check-in"
-    time={r.check_in_time}
-    address={ci.address}
-  />
-</Popup>
+                  <Popup>
+                    <TimelinePopup record={r} />
+                  </Popup>
                 </Marker>
               )}
 
-              {/* ===== PROGRESS ===== */}
+              {/* PROGRESS */}
               {(r.attendance_location_logs || []).map((log, idx) => (
                 <CircleMarker
                   key={idx}
@@ -177,26 +252,16 @@ const PopupContent = ({ name, label, time, address }) => (
                   radius={6}
                   pathOptions={{ color: "#f59e0b" }}>
                   <Popup>
-                    <strong>{r.employee?.name}</strong>
-                    <br />
-                    {log.activity || "Progres"}
-                    <br />
-                    {new Date(log.recorded_at).toLocaleTimeString("id-ID")}
+                    <TimelinePopup record={r} />
                   </Popup>
                 </CircleMarker>
               ))}
 
-              {/* ===== CHECK-OUT ===== */}
-              {hasCO && (
+              {/* CHECK-OUT */}
+              {co?.lat && co?.lng && (
                 <Marker position={[co.lat, co.lng]} icon={checkOutIcon}>
                   <Popup>
-                    <strong>{r.employee?.name}</strong>
-                    <br />
-                    <span className="text-red-600">Check-out</span>
-                    <br />
-                    {r.check_out_time
-                      ? new Date(r.check_out_time).toLocaleTimeString("id-ID")
-                      : "-"}
+                    <TimelinePopup record={r} />
                   </Popup>
                 </Marker>
               )}
