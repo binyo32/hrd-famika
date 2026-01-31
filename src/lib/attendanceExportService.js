@@ -1,26 +1,42 @@
 import * as XLSX from "xlsx";
 
-export const exportAttendanceToExcel = ({ records, startDate, endDate }) => {
+export const exportAttendanceToExcel = ({ records, startDate, endDate ,mode}) => {
   if (!records || records.length === 0) {
     throw new Error("Tidak ada data absensi untuk diekspor");
   }
 
-  const excelData = records.map((row, index) => ({
+const excelData = records.map((row, index) => ({
   No: index + 1,
-  Tanggal: row.attendance_date,
+
+  // untuk unchecked: bisa range tanggal atau "-"
+  Tanggal: row.isUnchecked
+    ? `${startDate} s/d ${endDate}`
+    : row.attendance_date,
+
   "Nama Karyawan": row.employee?.name || "-",
   NIK: row.employee?.nik || "-",
   "Nama PM": row.direct_pm?.name || "-",
   "Keterangan/Project": row.project || "-",
-  "Check In": formatTime(row.check_in_time),
-  "Check Out": formatTime(row.check_out_time),
-  "Total Jam Kerja": getWorkDuration(
-    row.check_in_time,
-    row.check_out_time
-  ),
-  Status: row.attendance_statuses?.name || "-",
+
+  "Check In": row.isUnchecked
+    ? "-"
+    : formatTime(row.check_in_time),
+
+  "Check Out": row.isUnchecked
+    ? "-"
+    : formatTime(row.check_out_time),
+
+  "Total Jam Kerja": row.isUnchecked
+    ? "-"
+    : getWorkDuration(row.check_in_time, row.check_out_time),
+
+  Status: row.isUnchecked
+    ? "Belum Check-in"
+    : row.attendance_statuses?.name || "-",
+
   Catatan: row.notes || "",
 }));
+
 
 
   const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -42,8 +58,13 @@ export const exportAttendanceToExcel = ({ records, startDate, endDate }) => {
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Absensi");
+const statusLabel =
+  mode === "unchecked" ? "belum-checkin" : "";
+XLSX.writeFile(
+  workbook,
+  `laporan-absensi-${statusLabel}-${startDate}-sd-${endDate}.xlsx`
+);
 
-  XLSX.writeFile(workbook, `laporan-absensi-${startDate}-sd-${endDate}.xlsx`);
 };
 
 const formatTime = (iso) => {

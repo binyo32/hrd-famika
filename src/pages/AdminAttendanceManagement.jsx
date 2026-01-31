@@ -458,18 +458,17 @@ const AdminAttendanceManagement = () => {
     }));
   }, [uncheckedEmployees, filterStartDate, filterEndDate]);
   const filteredUncheckedEmployeeRecords = React.useMemo(() => {
-  const search = searchTerm.toLowerCase();
+    const search = searchTerm.toLowerCase();
 
-  if (!search) return uncheckedEmployeeRecords;
+    if (!search) return uncheckedEmployeeRecords;
 
-  return uncheckedEmployeeRecords.filter((record) => {
-    const name = record.employee?.name?.toLowerCase() || "";
-    const nik = record.employee?.nik?.toLowerCase() || "";
+    return uncheckedEmployeeRecords.filter((record) => {
+      const name = record.employee?.name?.toLowerCase() || "";
+      const nik = record.employee?.nik?.toLowerCase() || "";
 
-    return name.includes(search) || nik.includes(search);
-  });
-}, [uncheckedEmployeeRecords, searchTerm]);
-
+      return name.includes(search) || nik.includes(search);
+    });
+  }, [uncheckedEmployeeRecords, searchTerm]);
 
   const getWorkMinutes = (r) => {
     if (!r.check_in_time || !r.check_out_time) return 0;
@@ -522,16 +521,12 @@ const AdminAttendanceManagement = () => {
 
     return data;
   }, [filteredRecords, sort]);
- const finalReportRecords = React.useMemo(() => {
-  if (checkinFilter === "unchecked") {
-    return filteredUncheckedEmployeeRecords;
-  }
-  return sortedRecords;
-}, [
-  checkinFilter,
-  filteredUncheckedEmployeeRecords,
-  sortedRecords,
-]);
+  const finalReportRecords = React.useMemo(() => {
+    if (checkinFilter === "unchecked") {
+      return filteredUncheckedEmployeeRecords;
+    }
+    return sortedRecords;
+  }, [checkinFilter, filteredUncheckedEmployeeRecords, sortedRecords]);
 
   const pagedRecords = React.useMemo(() => {
     const source =
@@ -554,6 +549,12 @@ const AdminAttendanceManagement = () => {
       disabled: false,
     },
   ];
+  const exportRecords = React.useMemo(() => {
+    if (checkinFilter === "unchecked") {
+      return filteredUncheckedEmployeeRecords;
+    }
+    return sortedRecords;
+  }, [checkinFilter, filteredUncheckedEmployeeRecords, sortedRecords]);
 
   const renderContent = () => {
     switch (currentTab) {
@@ -692,20 +693,21 @@ const AdminAttendanceManagement = () => {
               </div>
 
               <Button
-                disabled={checkinFilter === "unchecked"}
                 onClick={() => {
-                  if (checkinFilter === "unchecked") return;
-
                   try {
                     exportAttendanceToExcel({
-                      records: sortedRecords,
+                      records: finalReportRecords,
                       startDate: filterStartDate,
                       endDate: filterEndDate,
+                      mode: checkinFilter,
                     });
 
                     toast({
                       title: "Berhasil",
-                      description: "Laporan absensi berhasil diekspor",
+                      description:
+                        checkinFilter === "unchecked"
+                          ? "Laporan karyawan belum check-in berhasil diekspor"
+                          : "Laporan absensi berhasil diekspor",
                     });
                   } catch (error) {
                     toast({
@@ -715,8 +717,7 @@ const AdminAttendanceManagement = () => {
                     });
                   }
                 }}
-                className={`my-4 bg-gradient-to-r from-green-500 to-teal-600 text-white
-    ${checkinFilter === "unchecked" ? "opacity-50 cursor-not-allowed" : ""}`}>
+                className="my-4 bg-gradient-to-r from-green-500 to-teal-600 text-white">
                 Ekspor Laporan (Excel)
               </Button>
 
