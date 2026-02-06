@@ -40,8 +40,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-const getNavLinks = (role, isPM,isDirectManager) => {
-  if (role === "admin") {
+const getNavLinks = (user, activeRole) => {
+  // ADMIN MODE (KHUSUS role Admin)
+  if (user.role === "Admin" && activeRole === "admin") {
+    return [
+      {
+        to: "/admin/attendance-management",
+        icon: Fingerprint,
+        text: "Manajemen Absensi",
+      },
+    ];
+  }
+
+  // SUPER ADMIN (FULL)
+  if (user.role === "Super Admin") {
     return [
       { to: "/admin/dashboard", icon: LayoutDashboard, text: "Dashboard" },
       { to: "/admin/employees", icon: Users, text: "Manajemen Karyawan" },
@@ -72,7 +84,7 @@ const getNavLinks = (role, isPM,isDirectManager) => {
     ];
   }
 
-  // === EMPLOYEE BASE MENU ===
+  // EMPLOYEE DEFAULT
   const links = [
     { to: "/employee/dashboard", icon: LayoutDashboard, text: "Dashboard" },
     { to: "/employee/attendance", icon: Fingerprint, text: "Absensi" },
@@ -84,14 +96,15 @@ const getNavLinks = (role, isPM,isDirectManager) => {
     { to: "/employee/profile", icon: UserCircle, text: "Profil Saya" },
   ];
 
-  if (isPM) {
+  if (user.isPM) {
     links.splice(2, 0, {
       to: "/employee/pm-attendance",
       icon: UserCheck,
       text: "Absensi Tim",
     });
   }
-  if (isDirectManager) {
+
+  if (user.isDirectManager) {
     links.splice(2, 0, {
       to: "/employee/my-team",
       icon: UserCog2,
@@ -102,7 +115,15 @@ const getNavLinks = (role, isPM,isDirectManager) => {
   return links;
 };
 
-const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse ,  onLogout}) => {
+const Sidebar = ({
+  isOpen,
+  isCollapsed,
+  toggleSidebar,
+  toggleCollapse,
+  onLogout,
+  activeRole,
+  setActiveRole,
+}) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -125,7 +146,7 @@ const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse ,  onLogou
     navigate("/login");
   };
 
-  const navLinks = getNavLinks(user?.role, user?.isPM,user?.isDirectManager);
+  const navLinks = getNavLinks(user, activeRole);
 
   const sidebarVariants = {
     open: { x: 0 },
@@ -236,6 +257,18 @@ const Sidebar = ({ isOpen, isCollapsed, toggleSidebar, toggleCollapse ,  onLogou
             </motion.div>
           ))}
         </motion.nav>
+        {user.role === "Admin" && (
+          <button
+            className="w-fit mx-auto mb-2 bg-gradient-to-r from-indigo-700 to-purple-800 hover:from-indigo-800 hover:to-indigo-900 text-white px-4 py-2 rounded-xl font-bold"
+         onClick={() => {
+  setActiveRole(activeRole === "admin" ? "employee" : "admin");
+}}
+>
+            {activeRole === "admin"
+              ? "Beralih ke Akun Karyawan"
+              : "Beralih ke Akun Admin"}
+          </button>
+        )}
 
         {/* FOOTER */}
         <motion.div className="p-4 border-t" variants={navItemVariants}>
@@ -394,7 +427,9 @@ const Header = ({
             <DropdownMenuItem
               onSelect={() =>
                 navigate(
-                  user.role === "admin" ? "/admin/profile" : "/employee/profile"
+                  user.role === "admin"
+                    ? "/admin/profile"
+                    : "/employee/profile",
                 )
               }
               className="cursor-pointer gap-2">
@@ -422,7 +457,7 @@ const Layout = ({ children }) => {
   const { user } = useAuth();
   const location = useLocation();
   const [isDesktop, setIsDesktop] = useState(
-    window.matchMedia("(min-width: 1024px)").matches
+    window.matchMedia("(min-width: 1024px)").matches,
   );
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -433,25 +468,64 @@ const Layout = ({ children }) => {
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
   };
-const { logout } = useAuth();
+  // TAMBAHKAN
+  const getActiveRole = (user) => {
+    if (!user) return null;
 
-const handleLogout = async () => {
-  if (user) {
-    await addLog({
-      userId: user.id,
-      userName: user.name || user.email,
-      userRole: user.role,
-      action: "LOGOUT",
-      targetType: "SESSION",
-      details: {
-        message: `User ${user.name || user.email} logged out.`,
-      },
-    });
+    const stored = localStorage.getItem("activeRole");
+    if (stored) return stored;
+
+    // ❗ KHUSUS Admin saja
+    if (user.role === "Admin") {
+      return "employee";
+    }
+
+    return user.role === "Admin" ? "employee" : "employee";
+  };
+
+  const [activeRole, setActiveRole] = useState(() => getActiveRole(user));
+
+  useEffect(() => {
+    if (activeRole) {
+      localStorage.setItem("activeRole", activeRole);
+    }
+  }, [activeRole]);
+useEffect(() => {
+  if (!activeRole || !user) return;
+  if (user.role !== "Admin") return;
+
+  // 🔒 Cegah override saat user klik menu
+  if (activeRole === "admin") {
+    if (!location.pathname.startsWith("/admin")) {
+      navigate("/admin/attendance-management", { replace: true });
+    }
+  } else {
+    if (!location.pathname.startsWith("/employee")) {
+      navigate("/employee/dashboard", { replace: true });
+    }
   }
+}, [activeRole, user, location.pathname, navigate]);
 
-  await logout();
-  navigate("/login");
-};
+
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    if (user) {
+      await addLog({
+        userId: user.id,
+        userName: user.name || user.email,
+        userRole: user.role,
+        action: "LOGOUT",
+        targetType: "SESSION",
+        details: {
+          message: `User ${user.name || user.email} logged out.`,
+        },
+      });
+    }
+
+    await logout();
+    navigate("/login");
+  };
 
   const showToast = useCallback(
     (announcement) => {
@@ -473,7 +547,7 @@ const handleLogout = async () => {
         ),
       });
     },
-    [toast, navigate, user]
+    [toast, navigate, user],
   );
 
   const fetchNotifications = useCallback(
@@ -497,16 +571,16 @@ const handleLogout = async () => {
         setNotifications(announcements.slice(0, 5));
 
         const seenAnnouncements = JSON.parse(
-          localStorage.getItem("seen_announcements") || "[]"
+          localStorage.getItem("seen_announcements") || "[]",
         );
         const newUnreadCount = announcements.filter(
-          (ann) => !seenAnnouncements.includes(ann.id)
+          (ann) => !seenAnnouncements.includes(ann.id),
         ).length;
         setUnreadCount(newUnreadCount);
 
         if (isInitialFetch) {
           const unreadAnnouncements = announcements.filter(
-            (ann) => !seenAnnouncements.includes(ann.id)
+            (ann) => !seenAnnouncements.includes(ann.id),
           );
           if (unreadAnnouncements.length > 0) {
             showToast(unreadAnnouncements[0]);
@@ -521,7 +595,7 @@ const handleLogout = async () => {
         console.error("Error fetching notifications:", error);
       }
     },
-    [user, showToast]
+    [user, showToast],
   );
 
   useEffect(() => {
@@ -547,7 +621,7 @@ const handleLogout = async () => {
 
           showToast(newAnnouncement);
           fetchNotifications();
-        }
+        },
       )
       .subscribe();
 
@@ -560,7 +634,7 @@ const handleLogout = async () => {
     if (unreadCount > 0) {
       const currentlyDisplayedIds = notifications.map((n) => n.id);
       const seenAnnouncements = JSON.parse(
-        localStorage.getItem("seen_announcements") || "[]"
+        localStorage.getItem("seen_announcements") || "[]",
       );
       const newSeen = [
         ...new Set([...seenAnnouncements, ...currentlyDisplayedIds]),
@@ -599,7 +673,9 @@ const handleLogout = async () => {
         isCollapsed={isCollapsed}
         toggleSidebar={toggleSidebar}
         toggleCollapse={toggleCollapse}
-         onLogout={handleLogout}
+        onLogout={handleLogout}
+        activeRole={activeRole}
+        setActiveRole={setActiveRole}
       />
 
       <div

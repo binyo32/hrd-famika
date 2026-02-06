@@ -87,82 +87,92 @@ export const getEmployeeById = async (id) => {
 };
 
 export const addEmployee = async (employee, adminUser) => {
-  const employeeDataForSupabase = mapEmployeeDataToSupabase(employee);
-  
-  if (!employeeDataForSupabase.password) {
-    employeeDataForSupabase.password = 'karyawan123';
+  const payload = mapEmployeeDataToSupabase(employee);
+
+  // ⚠️ pastikan password ikut jika ada
+  if (employee.password && employee.password.trim() !== "") {
+    payload.password = employee.password;
   }
 
-  const { data, error } = await supabase
-    .from('employees')
-    .insert([employeeDataForSupabase])
-    .select()
-    .single();
+  const { data, error } = await supabase.functions.invoke("employee-sync", {
+    body: {
+      mode: "create",
+      payload,
+    },
+  });
 
   if (error) {
-    console.error('Error adding employee:', error);
+    console.error("Edge create error:", error);
     throw error;
   }
-  
-  if (data && adminUser) {
+
+  if (adminUser) {
     await addLog({
       userId: adminUser.id,
       userName: adminUser.name || adminUser.email,
       userRole: adminUser.role,
-      action: 'CREATE',
-      targetType: 'EMPLOYEE',
-      targetId: data.id,
-      targetName: data.name,
+      action: "CREATE",
+      targetType: "EMPLOYEE",
+      targetName: employee.name,
     });
   }
-  
-  return data ? mapEmployeeDataFromSupabase(data) : null;
+
+  return data;
 };
 
-export const updateEmployee = async (updatedEmployee, adminUser, originalEmployeeData) => {
-  const { id, password, ...restOfEmployee } = updatedEmployee;
-  const employeeDataForSupabase = mapEmployeeDataToSupabase(restOfEmployee);
+export const updateEmployee = async (
+  updatedEmployee,
+  adminUser,
+  originalEmployeeData
+) => {
+  const { id, password, ...rest } = updatedEmployee;
+  const payload = mapEmployeeDataToSupabase(rest);
 
-  if (password && password.trim() !== '') {
-    employeeDataForSupabase.password = password;
-  } else {
-    delete employeeDataForSupabase.password; 
+  // ⚠️ hanya kirim password jika diisi
+  if (password && password.trim() !== "") {
+    payload.password = password;
   }
-  
-  const { data, error } = await supabase
-    .from('employees')
-    .update(employeeDataForSupabase)
-    .eq('id', id)
-    .select()
-    .single();
+
+  const { data, error } = await supabase.functions.invoke("employee-sync", {
+    body: {
+      mode: "update",
+      employeeId: id,
+      payload,
+    },
+  });
 
   if (error) {
-    console.error('Error updating employee:', error);
+    console.error("Edge update error:", error);
     throw error;
   }
 
-  if (data && adminUser) {
+  if (adminUser) {
     const changes = {};
-    for (const key in employeeDataForSupabase) {
-        if (employeeDataForSupabase[key] !== originalEmployeeData[key]) {
-            changes[key] = { from: originalEmployeeData[key], to: employeeDataForSupabase[key] };
-        }
+    for (const key in payload) {
+      if (payload[key] !== originalEmployeeData[key]) {
+        changes[key] = {
+          from: originalEmployeeData[key],
+          to: payload[key],
+        };
+      }
     }
 
     await addLog({
-        userId: adminUser.id,
-        userName: adminUser.name || adminUser.email,
-        userRole: adminUser.role,
-        action: 'UPDATE',
-        targetType: 'EMPLOYEE',
-        targetId: data.id,
-        targetName: data.name,
-        details: { changes }
+      userId: adminUser.id,
+      userName: adminUser.name || adminUser.email,
+      userRole: adminUser.role,
+      action: "UPDATE",
+      targetType: "EMPLOYEE",
+      targetId: id,
+      targetName: updatedEmployee.name,
+      details: { changes },
     });
   }
 
-  return data ? mapEmployeeDataFromSupabase(data) : null;
+  return data;
 };
+
+
 
 export const deleteEmployee = async (id, adminUser, employeeName) => {
   const { error } = await supabase

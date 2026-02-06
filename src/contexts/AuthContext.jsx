@@ -22,92 +22,71 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  const initAuth = async () => {
-    try {
-      const cached = localStorage.getItem("currentUser");
-      if (!cached) return;
+ const initAuth = async () => {
+  try {
+    const { data } = await supabase.auth.getSession();
 
-      const parsed = JSON.parse(cached);
-
-      // rebuild user dari DB (ANTI DATA STALE)
-      const rebuiltUser = await buildFullUser(parsed.id, parsed.role);
-      setUser(rebuiltUser);
-      localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
-    } catch (err) {
-      console.error("Auth init error:", err);
+    if (!data.session) {
       localStorage.removeItem("currentUser");
       setUser(null);
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
+
+    const rebuiltUser = await buildFullUser(data.session.user.id);
+    setUser(rebuiltUser);
+    localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
+  } catch (err) {
+    setUser(null);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   /* =========================
    * BUILD FULL USER (KUNCI)
    * ========================= */
-  const buildFullUser = async (userId, role) => {
-    // if (role === "employee") {
-    //   const { data, error } = await supabase
-    //     .from("employees")
-    //     .select("*")
-    //     .eq("id", userId)
-    //     .single();
+  const buildFullUser = async (authUserId) => {
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select(`
+      id,
+      role,
+      is_active,
+      employees (*)
+    `)
+    .eq("id", authUserId)
+    .single();
 
-    //   if (error) throw error;
+  if (error || !profile) {
+    throw new Error("Profile tidak ditemukan");
+  }
 
-    //   const isPM = await checkIsPM(userId);
+  if (!profile.is_active) {
+    throw new Error("Akun tidak aktif");
+  }
 
-    //   return {
-    //     id: userId,
-    //     role,
-    //     isPM,
-    //     name: data.name,
-    //     email: data.email,
-    //     employeeData: mapEmployeeDataFromSupabase(data),
-    //   };
-    // }
-    if (role === "employee") {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("*")
-        .eq("id", userId)
-        .single();
+  const employee = profile.employees ?? null;
 
-      if (error) throw error;
+  const isPM = employee ? Boolean(employee.is_direct_pm) : false;
+  const isDirectManager = employee
+    ? await checkIsDirectManager(employee.id)
+    : false;
 
-      const isPM = await checkIsPM(userId);
-      const isDirectManager = await checkIsDirectManager(userId);
-
-      return {
-        id: userId,
-        role,
-        isPM,
-        isDirectManager,
-        name: data.name,
-        email: data.email,
-        employeeData: mapEmployeeDataFromSupabase(data),
-      };
-    }
-
-    if (role === "admin") {
-      const { data, error } = await supabase
-        .from("admins")
-        .select("id, name, email")
-        .eq("id", userId)
-        .single();
-
-      if (error) throw error;
-
-      return {
-        id: data.id,
-        role,
-        name: data.name,
-        email: data.email,
-      };
-    }
-
-    return null;
+  return {
+    id: profile.id,
+    role: profile.role,
+    name: employee?.name ?? profile.email,
+    email: profile.email,
+    isPM,
+    isDirectManager,
+    employeeData: employee
+      ? mapEmployeeDataFromSupabase(employee)
+      : null,
   };
+};
+
+
 
   /* =========================
    * LOGIN (SET SEKALI)
@@ -115,7 +94,8 @@ export const AuthProvider = ({ children }) => {
   const login = async (basicUser) => {
     setLoading(true);
 
-    const fullUser = await buildFullUser(basicUser.id, basicUser.role);
+  const fullUser = await buildFullUser(basicUser.id);
+
 
     setUser(fullUser);
     localStorage.setItem("currentUser", JSON.stringify(fullUser));
@@ -137,60 +117,32 @@ export const AuthProvider = ({ children }) => {
   /* =========================
    * LOGOUT
    * ========================= */
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem("currentUser");
-  };
+  const logout = async () => {
+  await supabase.auth.signOut();
+  setUser(null);
+  localStorage.removeItem("currentUser");
+};
+
 
   /* =========================
    * CHECK PM
    * ========================= */
-  const checkIsPM = async (employeeId) => {
-    const { count, error } = await supabase
-      .from("attendance_records")
-      .select("id", { count: "exact", head: true })
-      .eq("direct_pm_id", employeeId);
+const checkIsPM = (employee) => {
+  return Boolean(employee?.is_direct_pm);
+};
 
-    if (error) return false;
-    return count > 0;
-  };
   /* =========================
    * CHECK DIRECT MANAGER (N LEVEL)
    * ========================= */
-  const checkIsDirectManager = async (managerId) => {
-    try {
-      const visited = new Set();
+  const checkIsDirectManager = async (employeeId) => {
+  const { count, error } = await supabase
+    .from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("direct_manager_id", employeeId);
 
-      const traverse = async (currentManagerId) => {
-        // cegah infinite loop
-        if (visited.has(currentManagerId)) return false;
-        visited.add(currentManagerId);
-
-        const { data, error } = await supabase
-          .from("employees")
-          .select("id")
-          .eq("direct_manager_id", currentManagerId);
-
-        if (error) return false;
-
-        // kalau punya bawahan langsung → manager
-        if (data.length > 0) return true;
-
-        // cek level berikutnya
-        for (const emp of data) {
-          const isManagerBelow = await traverse(emp.id);
-          if (isManagerBelow) return true;
-        }
-
-        return false;
-      };
-
-      return await traverse(managerId);
-    } catch (err) {
-      console.error("checkIsDirectManager error:", err);
-      return false;
-    }
-  };
+  if (error) return false;
+  return count > 0;
+};
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>

@@ -71,14 +71,14 @@ const EmployeeTeamPage = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    loadMyTeam();
-  }, [user?.id]);
+ useEffect(() => {
+ if (!user?.employeeData?.id) return;
+  loadMyTeam();
+}, [user?.employeeData?.id]);
 
   const loadMyTeam = async () => {
     setLoading(true);
-    const data = await fetchMySubordinates(user.id);
+     const data = await fetchMySubordinates(user.employeeData.id);
     setEmployees(data);
     setLoading(false);
   };

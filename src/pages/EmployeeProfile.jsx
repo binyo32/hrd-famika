@@ -23,53 +23,21 @@ import {
 import { motion } from 'framer-motion';
 
 const EmployeeProfile = () => {
-   const { user } = useAuth();
-  const [employee, setEmployee] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const fetchEmployee = async () => {
-      setLoading(true);
-
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (error) {
-        console.error('Fetch employee error:', error);
-      } else {
-        setEmployee(data);
-      }
-
-      setLoading(false);
-    };
-
-    fetchEmployee();
-  }, [user?.id]);
-
-  if (loading) {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Memuat data karyawan...</p>
-        </div>
-      </Layout>
-    );
-  }
+    const { user } = useAuth();
+  const employee = user?.employeeData;
 
   if (!employee) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Data karyawan tidak ditemukan</p>
+          <p className="text-muted-foreground">
+            Data karyawan tidak ditemukan untuk role <b>{user?.role}</b>.
+          </p>
         </div>
       </Layout>
     );
   }
+ 
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -140,17 +108,17 @@ const EmployeeProfile = () => {
     return { duration: durationString, category, years: diffYears, months: diffMonths };
   };
   
-  const ageDetails = calculateAgeDetails(employee.birth_date);
-  const workDurationDetails = calculateWorkDurationDetails(employee.join_date);
+  const ageDetails = calculateAgeDetails(employee.birthDate);
+  const workDurationDetails = calculateWorkDurationDetails(employee.joinDate);
 
   const profileFields = [
     { icon: User, label: 'NIK/Nomor Pegawai', value: employee.nik },
     { icon: Award, label: 'Jabatan', value: employee.position },
     { icon: Briefcase, label: 'Divisi', value: employee.division },
-    { icon: CalendarDays, label: 'Tanggal Masuk', value: employee.join_date ? new Date(employee.join_date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A' },
+    { icon: CalendarDays, label: 'Tanggal Masuk', value: employee.joinDate ? new Date(employee.joinDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A' },
     { icon: Clock, label: 'Masa Kerja', value: workDurationDetails.duration },
     { icon: Clock, label: 'Kategori Masa Kerja', value: workDurationDetails.category },
-    { icon: CalendarDays, label: 'Tanggal Lahir', value: employee.birth_date ? new Date(employee.birth_date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A' },
+    { icon: CalendarDays, label: 'Tanggal Lahir', value: employee.birthDate ? new Date(employee.birthDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A' },
     { icon: User, label: 'Usia', value: ageDetails.age },
     { icon: User, label: 'Kategori Usia', value: ageDetails.category },
     { icon: Mail, label: 'Email', value: employee.email },
@@ -158,9 +126,9 @@ const EmployeeProfile = () => {
     { icon: BookOpen, label: 'Pendidikan', value: employee.education || 'N/A' },
     { icon: MapIcon, label: 'Provinsi (KTP)', value: employee.province || 'N/A' },
     { icon: MapPin, label: 'Alamat (KTP)', value: employee.address, fullWidth: true },
-    { icon: Building, label: 'Lokasi Kerja', value: employee.work_location || 'N/A'},
-    { icon: ShieldCheck, label: 'Nomor BPJS', value: employee.bpjs_number || 'N/A' },
-    ...(employee.active_status === 'Resign' && employee.termination_date ? [{ icon: LogOut, label: 'Tanggal Keluar', value: new Date(employee.termination_date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) }] : [])
+    { icon: Building, label: 'Lokasi Kerja', value: employee.workLocation || 'N/A'},
+    { icon: ShieldCheck, label: 'Nomor BPJS', value: employee.bpjsNumber || 'N/A' },
+    ...(employee.activeStatus === 'Resign' && employee.terminationDate ? [{ icon: LogOut, label: 'Tanggal Keluar', value: new Date(employee.terminationDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) }] : [])
   ];
 
   return (
@@ -223,7 +191,7 @@ const EmployeeProfile = () => {
                       {employee.status}
                     </Badge>
                      <Badge className={`${getActiveStatusColor(employee.active_status)} text-white text-sm px-3 py-1`}>
-                      {employee.active_status}
+                      {employee.activeStatus}
                     </Badge>
                   </div>
                 </div>
@@ -241,7 +209,7 @@ const EmployeeProfile = () => {
                   <div className="text-center p-4 rounded-lg bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20">
                     <p className="text-sm font-medium text-muted-foreground">Lokasi Kerja</p>
                     <p className="text-xl font-bold text-purple-600 dark:text-purple-400">
-                      {employee.work_location || 'N/A'}
+                      {employee.workLocation || 'N/A'}
                     </p>
                   </div>
                 </div>

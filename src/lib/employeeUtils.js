@@ -147,7 +147,7 @@ export const mapEmployeeDataToSupabase = (employee) => {
     active_status: activeStatus,
     termination_date: terminationDate ? format(parseExcelDate(terminationDate), 'yyyy-MM-dd') : null,
     bpjs_number: bpjsNumber,
-    direct_manager_id: directManagerId,
+    direct_manager_id: directManagerId || null,
     project: project,
     npwp: npwp,
     ptkp_status: ptkp_status,

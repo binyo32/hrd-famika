@@ -20,81 +20,93 @@ const LoginPage = () => {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    if (!email || !password) {
-      toast({
-        title: "Input Tidak Lengkap",
-        description: "Email dan password harus diisi.",
-        variant: "destructive",
-      });
-      return;
+const handleLogin = async (e) => {
+  e.preventDefault();
+
+  if (!email || !password) {
+    toast({
+      title: "Input Tidak Lengkap",
+      description: "Email dan password harus diisi.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    // 1️⃣ Login Auth
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error || !data?.user) {
+      throw new Error("Email atau password salah");
     }
-    setLoading(true);
 
-    try {
-      const { data: loginResult, error: loginError } = await supabase.rpc('login_user', {
-        p_email: email,
-        p_password: password
-      });
+    const user = data.user;
 
-      if (loginError) {
-        throw loginError;
-      }
-      
-      if (loginResult) {
-        const user = loginResult;
-        let userData;
-        if (user.role === 'admin') {
-          userData = {
-            id: user.id,
-            name: user.name || 'Administrator',
-            email: user.email,
-            role: 'admin',
-          };
-          login(userData);
-          toast({
-            title: "Login Admin Berhasil!",
-            description: `Selamat datang, ${userData.name}!`,
-          });
-          navigate('/admin/dashboard');
-        } else if (user.role === 'employee') {
-          userData = {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: 'employee',
-            photo: user.photo,
-            employeeData: { ...user, birthDate: user.birth_date, joinDate: user.join_date }
-          };
-          login(userData);
-          toast({
-            title: "Login Karyawan Berhasil!",
-            description: `Selamat datang, ${user.name}!`,
-          });
-          navigate('/employee/dashboard');
-        } else {
-            throw new Error("Peran pengguna tidak diketahui.");
-        }
-      } else {
-        toast({
-          title: "Login Gagal",
-          description: "Email atau password salah!",
-          variant: "destructive",
-        });
-      }
+    // 2️⃣ Ambil profile + employee (PAKAI maybeSingle)
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select(`
+        id,
+        role,
+        is_active,
+        employees (*)
+      `)
+      .eq("id", user.id)
+      .maybeSingle();
 
-    } catch (error) {
-      console.error("Login error:", error);
-      toast({
-        title: "Error",
-        description: "Terjadi kesalahan saat login.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+    // ⛔ profile BENAR-BENAR tidak ada
+    if (!profile) {
+      throw new Error("Profile tidak ditemukan");
     }
-  };
+
+    if (!profile.is_active) {
+      throw new Error("Akun tidak aktif");
+    }
+
+    // 3️⃣ Bentuk user data (AMAN walau employees null)
+    const userData = {
+      id: user.id,
+      email: user.email,
+      role: profile.role,
+      name: profile.employees?.name ?? user.email,
+      photo: profile.employees?.photo ?? null,
+      employeeData: profile.employees ?? null,
+    };
+
+    login(userData);
+
+    toast({
+      title: "Login Berhasil",
+      description: `Selamat datang, ${userData.name}`,
+    });
+
+    // 4️⃣ Redirect (case-insensitive)
+    const role = profile.role.toLowerCase();
+
+    if (["super admin"].includes(role)) {
+      navigate("/admin/dashboard");
+    } else {
+      navigate("/employee/dashboard");
+    }
+
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
+
+    toast({
+      title: "Login Gagal",
+      description: err.message || "Terjadi kesalahan saat login",
+      variant: "destructive",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-blue-900 dark:to-indigo-900 p-4">

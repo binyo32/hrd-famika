@@ -65,7 +65,7 @@ const AdminAnnouncements = () => {
         .order("created_at", { ascending: false });
       if (searchTerm) {
         query = query.or(
-          `title.ilike.%${searchTerm}%,content.ilike.%${searchTerm}%`
+          `title.ilike.%${searchTerm}%,content.ilike.%${searchTerm}%`,
         );
       }
       const { data, error } = await query;
@@ -154,7 +154,7 @@ const AdminAnnouncements = () => {
           .insert([
             {
               ...payload,
-              author_name: user?.name || "Admin",
+              author_name: user?.name || "Admin Famika",
               author_role: user?.role || "Administrator",
             },
           ])
@@ -266,8 +266,8 @@ const AdminAnnouncements = () => {
 
     setAnnouncements((prev) =>
       prev.map((a) =>
-        a.id === announcementId ? { ...a, liked_by: newLikedBy } : a
-      )
+        a.id === announcementId ? { ...a, liked_by: newLikedBy } : a,
+      ),
     );
 
     try {

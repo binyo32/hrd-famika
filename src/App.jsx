@@ -29,6 +29,7 @@ import BirthdayDialog from "@/components/admin/dashboard/BirthdayDialog";
 import EmployeeAttendancePage from "@/pages/EmployeeAttendancePage";
 import TeamAttendancePage from "@/pages/TeamAttendancePage";
 import EmployeeTeamPage from "@/pages/EmployeeTeamPage";
+import ForbiddenPage from "./pages/ForbiddenPage";
 
 function AppContent() {
   const { successModalProps, showSuccessModal, hideSuccessModal } =
@@ -43,7 +44,7 @@ function AppContent() {
           <Route
             path="/admin/dashboard"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={["Super Admin"]}>
                 <AdminDashboard />
               </ProtectedRoute>
             }
@@ -51,7 +52,7 @@ function AppContent() {
           <Route
             path="/admin/employees"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <EmployeeManagement />
               </ProtectedRoute>
             }
@@ -59,7 +60,7 @@ function AppContent() {
           <Route
             path="/admin/employees/:id"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <EmployeeDetail />
               </ProtectedRoute>
             }
@@ -67,7 +68,7 @@ function AppContent() {
           <Route
             path="/admin/announcements"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <AdminAnnouncements />
               </ProtectedRoute>
             }
@@ -75,7 +76,7 @@ function AppContent() {
           <Route
             path="/admin/leave-management"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <AdminLeaveManagement showSuccessModal={showSuccessModal} />
               </ProtectedRoute>
             }
@@ -83,7 +84,7 @@ function AppContent() {
           <Route
             path="/admin/contract-management"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <AdminContractManagement />
               </ProtectedRoute>
             }
@@ -91,7 +92,7 @@ function AppContent() {
           <Route
             path="/admin/organization-chart"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <AdminOrgChart />
               </ProtectedRoute>
             }
@@ -99,7 +100,7 @@ function AppContent() {
           <Route
             path="/admin/direct-manager"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <DirectManagerView />
               </ProtectedRoute>
             }
@@ -107,7 +108,7 @@ function AppContent() {
           <Route
             path="/admin/attendance-management"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={["Admin", "Super Admin"]}>
                 <AdminAttendanceManagement />
               </ProtectedRoute>
             }
@@ -115,7 +116,7 @@ function AppContent() {
           <Route
             path="/admin/settings"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={["Super Admin"]}>
                 <AdminSettings />
               </ProtectedRoute>
             }
@@ -123,7 +124,7 @@ function AppContent() {
           <Route
             path="/admin/activity-log"
             element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <AdminActivityLog />
               </ProtectedRoute>
             }
@@ -131,7 +132,8 @@ function AppContent() {
           <Route
             path="/employee/dashboard"
             element={
-              <ProtectedRoute requiredRole="employee">
+              <ProtectedRoute
+                requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
                 <EmployeeDashboard />
               </ProtectedRoute>
             }
@@ -139,7 +141,8 @@ function AppContent() {
           <Route
             path="/employee/profile"
             element={
-              <ProtectedRoute requiredRole="employee">
+              <ProtectedRoute
+                requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
                 <EmployeeProfile />
               </ProtectedRoute>
             }
@@ -147,7 +150,8 @@ function AppContent() {
           <Route
             path="/employee/leave-request"
             element={
-              <ProtectedRoute requiredRole="employee">
+              <ProtectedRoute
+                requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
                 <EmployeeLeaveRequest showSuccessModal={showSuccessModal} />
               </ProtectedRoute>
             }
@@ -155,7 +159,8 @@ function AppContent() {
           <Route
             path="/employee/attendance"
             element={
-              <ProtectedRoute requiredRole="employee">
+              <ProtectedRoute
+                requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
                 <EmployeeAttendancePage />
               </ProtectedRoute>
             }
@@ -163,7 +168,8 @@ function AppContent() {
           <Route
             path="/employee/pm-attendance"
             element={
-              <ProtectedRoute requiredRole="employee">
+              <ProtectedRoute
+                requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
                 <TeamAttendancePage />
               </ProtectedRoute>
             }
@@ -171,11 +177,13 @@ function AppContent() {
           <Route
             path="/employee/my-team"
             element={
-              <ProtectedRoute requiredRole="employee">
+              <ProtectedRoute
+                requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
                 <EmployeeTeamPage />
               </ProtectedRoute>
             }
           />
+          <Route path="/403" element={<ForbiddenPage />} />
         </Routes>
         <Toaster />
         <SuccessModal

@@ -44,7 +44,7 @@ const TeamAttendancePage = () => {
     return () => clearTimeout(handler);
   }, [search]);
   useEffect(() => {
-    if (!user) return;
+   if (!user?.employeeData?.id) return;
     fetchAttendance();
   }, [user, debouncedSearch, dateFrom, dateTo]);
   useEffect(() => {
@@ -77,7 +77,7 @@ const TeamAttendancePage = () => {
       )
     `,
       )
-      .eq("direct_pm_id", user.id)
+      .eq("direct_pm_id", user.employeeData.id)
       .order("attendance_date", { ascending: false });
 
     if (dateFrom) {

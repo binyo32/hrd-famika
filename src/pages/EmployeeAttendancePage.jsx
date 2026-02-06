@@ -35,6 +35,7 @@ import ConfirmCheckoutDialog from "../components/employee/ConfirmCheckoutDialog"
 import UpdateLocationDialog from "../components/employee/attendance/UpdateLocationDialog";
 import LocationLogsTable from "../components/employee/attendance/LocationLogsTable";
 import CheckoutBlockedDialog from "../components/employee/attendance/CheckoutBlockedDialog";
+import WorkHourWarningDialog from "../components/employee/attendance/WorkHourWarningDialog";
 
 const EmployeeAttendancePage = () => {
   const { user } = useAuth();
@@ -66,6 +67,14 @@ const EmployeeAttendancePage = () => {
   const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
   const [showUpdateLocation, setShowUpdateLocation] = useState(false);
   const [showCheckoutBlocked, setShowCheckoutBlocked] = useState(false);
+  const [showWorkHourAlert, setShowWorkHourAlert] = useState(false);
+  const [workDurationHours, setWorkDurationHours] = useState(0);
+  const getWorkDurationHours = (checkInTime) => {
+    const checkIn = new Date(checkInTime);
+    const now = new Date();
+    const diffMs = now - checkIn;
+    return diffMs / (1000 * 60 * 60); // jam
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -91,14 +100,14 @@ const EmployeeAttendancePage = () => {
   }, []);
 
   const fetchTodayAttendance = useCallback(async () => {
-    if (!user || !user.id) return;
+    if (!user?.employeeData?.id) return;
     setLoading((prev) => ({ ...prev, today: true }));
     try {
       const today = new Date().toISOString().split("T")[0];
       const { data, error } = await supabase
         .from("attendance_records")
         .select("*, attendance_statuses(name)")
-        .eq("employee_id", user.id)
+        .eq("employee_id", user.employeeData.id)
         .eq("attendance_date", today)
         .single();
 
@@ -117,13 +126,13 @@ const EmployeeAttendancePage = () => {
   }, [user]);
 
   const fetchAttendanceHistory = useCallback(async () => {
-    if (!user || !user.id) return;
+    if (!user?.employeeData?.id) return;
     setLoading((prev) => ({ ...prev, history: true }));
     try {
       const { data, error } = await supabase
         .from("attendance_records")
         .select("*, attendance_statuses(name)")
-        .eq("employee_id", user.id)
+        .eq("employee_id", user.employeeData.id)
         .order("attendance_date", { ascending: false })
         .limit(30); // Show last 30 records
       if (error) throw error;
@@ -219,7 +228,7 @@ const EmployeeAttendancePage = () => {
         .single();
 
       const { data, error } = await supabase.rpc("check_in_employee", {
-        p_employee_id: user.id,
+        p_employee_id: user.employeeData.id,
         p_status_id: hadirStatus.id,
         p_loc: locPayload,
         p_direct_pm: direct_pm_id,
@@ -252,10 +261,13 @@ const EmployeeAttendancePage = () => {
     try {
       const locPayload = getCurrentLiveLocationPayload();
 
-      const { data, error } = await supabase.rpc("check_out_employee_with_time", {
-        p_attendance_id: todayAttendance.id,
-        p_loc: locPayload,
-      });
+      const { data, error } = await supabase.rpc(
+        "check_out_employee_with_time",
+        {
+          p_attendance_id: todayAttendance.id,
+          p_loc: locPayload,
+        },
+      );
 
       if (error) throw error;
 
@@ -458,9 +470,18 @@ const EmployeeAttendancePage = () => {
         open={showUpdateLocation}
         onClose={() => setShowUpdateLocation(false)}
         attendanceId={todayAttendance?.id}
-        employeeId={user?.id}
+        employeeId={user?.employeeData?.id}
         liveLocation={liveLocation}
         liveAddress={liveAddress}
+      />
+      <WorkHourWarningDialog
+        open={showWorkHourAlert}
+        hours={workDurationHours}
+        onClose={() => setShowWorkHourAlert(false)}
+        onProceed={() => {
+          setShowWorkHourAlert(false);
+          setShowCheckoutConfirm(true);
+        }}
       />
 
       <div className="space-y-8">
@@ -562,6 +583,17 @@ const EmployeeAttendancePage = () => {
                           setShowCheckoutBlocked(true);
                           return;
                         }
+                      // check work duration hidupkan ini
+                        // const hours = getWorkDurationHours(
+                        //   todayAttendance.check_in_time,
+                        // );
+
+                        // if (hours < 8) {
+                        //   setWorkDurationHours(hours);
+                        //   setShowWorkHourAlert(true);
+                        //   return;
+                        // }
+
                         setShowCheckoutConfirm(true);
                       }}
                       disabled={!canCheckOut || loading.checkInOut}
