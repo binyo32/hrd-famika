@@ -31,14 +31,28 @@ export default function ProfilesTable() {
 
   const [selected, setSelected] = useState([]);
 
-  const fetchProfiles = async () => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("email, role, is_active, created_at")
-      .order("role", { ascending: false });
+const fetchProfiles = async () => {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(`
+      email,
+      role,
+      is_active,
+      created_at,
+      employees (
+        name
+      )
+    `)
+    .order("role", { ascending: false });
 
-    setProfiles(data || []);
-  };
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  setProfiles(data || []);
+};
+
 
   useEffect(() => {
     fetchProfiles();
@@ -164,6 +178,7 @@ export default function ProfilesTable() {
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead>Email</TableHead>
+              <TableHead>Nama</TableHead>
               <TableHead className="text-center">Role</TableHead>
               <TableHead className="text-center">Status</TableHead>
               <TableHead className="text-center">Update</TableHead>
@@ -189,6 +204,10 @@ export default function ProfilesTable() {
                 transition={{ delay: i * 0.03 }}
                 className="border-b last:border-b-0">
                 <TableCell className="font-medium">{p.email}</TableCell>
+                <TableCell className="font-medium">
+  {p.employees?.name ?? "-"}
+</TableCell>
+
 
                 <TableCell className="text-center">
                   <select
