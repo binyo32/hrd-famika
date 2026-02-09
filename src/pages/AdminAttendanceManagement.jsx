@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Map, Search } from "lucide-react";
+import { Camera, Map, Search } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { motion } from "framer-motion";
@@ -28,6 +28,8 @@ import {
   FileText,
   MapPin,
   Settings,
+  CameraIcon,
+  MapIcon,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import AttendanceFilterBar from "@/components/admin/attendance/AttendanceFilterBar";
@@ -46,12 +48,12 @@ import ReportsAttendanceTab from "../components/admin/attendance/tabs/ReportsAtt
 import AttendanceSettingTab from "../components/admin/attendance/tabs/AttendanceSettingTab";
 import ManualAttendanceTab from "../components/admin/attendance/tabs/ManualAttendanceTab";
 import AttendanceUpdateLocationTab from "../components/admin/attendance/tabs/AttendanceUpdateLocationTab";
+import AttendancePhotoTab from "../components/admin/attendance/tabs/AttendancePhotoTab";
 
 const AdminAttendanceManagement = () => {
-   const { user } = useAuth();
+  const { user } = useAuth();
   const [currentTab, setCurrentTab] = useState("daily_recap");
   const role = user?.role;
-
 
   const tabItems = [
     { id: "daily_recap", label: "Rekap Harian", icon: CalendarDays },
@@ -63,7 +65,13 @@ const AdminAttendanceManagement = () => {
     {
       id: "map_update",
       label: "Update Lokasi Absensi",
-      icon: Map,
+      icon: MapIcon,
+    },
+    {
+      id: "photo",
+      label: "Photo Attendance",
+      icon: Camera,
+      onlyFor: "Super Admin",
     },
     {
       id: "manual_input",
@@ -86,7 +94,6 @@ const AdminAttendanceManagement = () => {
     { id: "reports", label: "Laporan Absensi", icon: FileText },
   ];
 
-
   const renderContent = () => {
     switch (currentTab) {
       case "daily_recap":
@@ -94,6 +101,8 @@ const AdminAttendanceManagement = () => {
 
       case "manual_input":
         return <ManualAttendanceTab />;
+      case "photo":
+        return <AttendancePhotoTab />;
 
       case "reports":
         return <ReportsAttendanceTab />;
@@ -172,7 +181,6 @@ const AdminAttendanceManagement = () => {
           {renderContent()}
         </motion.div>
       </div>
-
     </Layout>
   );
 };
