@@ -59,13 +59,11 @@ const AdminAttendanceManagement = () => {
       id: "map",
       label: "Peta Absensi",
       icon: MapPin,
-      onlyFor: "Super Admin",
     },
     {
       id: "map_update",
       label: "Update Lokasi Absensi",
       icon: Map,
-      onlyFor: "Super Admin",
     },
     {
       id: "manual_input",
