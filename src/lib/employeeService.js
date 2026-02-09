@@ -98,6 +98,7 @@ export const addEmployee = async (employee, adminUser) => {
     body: {
       mode: "create",
       payload,
+       email: employee.email,
     },
   });
 
