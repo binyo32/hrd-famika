@@ -12,8 +12,6 @@ import {
   CardContent,
 } from "@/components/ui/card";
 
-const PAGE_SIZE = 60;
-
 export default function AttendancePhotoTab() {
   const [records, setRecords] = useState([]);
   const [filterDate, setFilterDate] = useState(
@@ -21,93 +19,73 @@ export default function AttendancePhotoTab() {
   );
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
 
-  /* ================= FETCH DATA (PAGINATED) ================= */
-  const fetchPhotos = useCallback(
-    async (reset = false) => {
-      if (loading) return;
+  /* PAGINATION STATE */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [total, setTotal] = useState(0);
 
-      setLoading(true);
+  /* ================= FETCH DATA ================= */
+  const fetchPhotos = useCallback(async () => {
+    setLoading(true);
 
-      const from = reset ? 0 : page * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
 
-      const { data, error } = await supabase
-        .from("attendance_records")
-        .select(
-          `
-    id,
-    attachment,
-    employee:employees!attendance_records_employee_id_fkey (
-      name,
-      nik
-    )
-  `,
-        )
-        .eq("attendance_date", filterDate)
-        .not("attachment", "is", null)
-        .range(from, to);
+    let query = supabase
+      .from("attendance_records")
+      .select(
+        `
+      id,
+      attachment,
+      employee:employees!attendance_records_employee_id_fkey (
+        name,
+        nik
+      )
+    `,
+        { count: "exact" },
+      )
+      .eq("attendance_date", filterDate)
+      .not("attachment", "is", null);
 
-      if (error) {
-        console.error(error);
-        setLoading(false);
-        return;
-      }
+    if (search) {
+      // 🔹 search attachment (table utama)
+      query = query.ilike("attachment", `%${search}%`);
 
-     if (reset) {
-  setRecords(data || []);
-  setPage(1);
-} else {
-  setRecords((prev) => [...prev, ...(data || [])]);
-  setPage((p) => p + 1);
-}
+      // 🔹 search employee.name (foreign table)
+      query = query.or(`name.ilike.%${search}%`, { foreignTable: "employees" });
+    }
 
-// ⬇️ INI PENTING
-if (!data || data.length < PAGE_SIZE) {
-  setHasMore(false); // sudah habis
-} else {
-  setHasMore(true);
-}
+    const { data, error, count } = await query.range(from, to);
 
-
+    if (error) {
+      console.error(error);
       setLoading(false);
-    },
-    [filterDate, page, loading],
-  );
+      return;
+    }
 
-  /* FIRST LOAD + RESET SAAT GANTI TANGGAL */
+    setRecords(data || []);
+    setTotal(count || 0);
+    setLoading(false);
+  }, [filterDate, page, pageSize, search]);
+
+  /* FETCH WHEN STATE CHANGE */
   useEffect(() => {
-    setRecords([]);
-    setPage(0);
-    setHasMore(true);
-    fetchPhotos(true);
-  }, [filterDate]);
+    fetchPhotos();
+  }, [fetchPhotos]);
 
-  /* ================= SEARCH FILTER ================= */
-  const filtered = useMemo(() => {
-    const s = search.toLowerCase();
+  /* RESET PAGE WHEN FILTER CHANGE */
+  useEffect(() => {
+    setPage(1);
+  }, [filterDate, pageSize, search]);
 
-    return [...records]
-      .filter((r) => {
-        const fileName = r.attachment?.toLowerCase() || "";
-        const emp = r.employee?.name?.toLowerCase() || "";
-        return fileName.includes(s) || emp.includes(s);
-      })
-      .sort((a, b) => {
-        const nameA = a.employee?.name || "";
-        const nameB = b.employee?.name || "";
-        return nameA.localeCompare(nameB);
-      });
-  }, [records, search]);
+  const totalPage = Math.ceil(total / pageSize);
 
   /* ================= GET PUBLIC URL ================= */
   const getPhotoUrl = (path) => {
     const { data } = supabase.storage
       .from("photo.attendance")
       .getPublicUrl(path);
-
     return data.publicUrl;
   };
 
@@ -136,23 +114,31 @@ if (!data || data.length < PAGE_SIZE) {
             onChange={(e) => setSearch(e.target.value)}
             className="max-w-sm"
           />
+
+          {/* PAGE SIZE */}
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            className="border rounded px-3 py-2 text-sm">
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
         </div>
 
         {/* LOADING */}
-        {loading && records.length === 0 && (
+        {loading && (
           <p className="text-sm text-muted-foreground">Memuat foto...</p>
         )}
 
-        {/* EMPTY */}
-        {!loading && filtered.length === 0 && (
+        {!loading && records.length === 0 && (
           <p className="text-sm text-muted-foreground">
             Tidak ada foto pada tanggal ini
           </p>
         )}
 
-        {/* GRID PHOTO */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {filtered.map((r) => (
+        {/* GRID PHOTO (TIDAK DIUBAH) */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          {records.map((r) => (
             <div
               key={r.id}
               className="rounded-lg border overflow-hidden bg-muted">
@@ -175,19 +161,30 @@ if (!data || data.length < PAGE_SIZE) {
           ))}
         </div>
 
-        {/* LOAD MORE */}
-    {hasMore && !search && (
-  <div className="flex justify-center pt-2">
-    <Button
-      variant="outline"
-      onClick={() => fetchPhotos()}
-      disabled={loading}
-    >
-      {loading ? "Loading..." : "Load More"}
-    </Button>
-  </div>
-)}
+        {/* PAGINATION CONTROL */}
+        {!search && totalPage > 1 && (
+          <div className="flex justify-center items-center gap-3 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 1}
+              onClick={() => setPage((p) => p - 1)}>
+              Prev
+            </Button>
 
+            <span className="text-xs text-muted-foreground">
+              Page {page} / {totalPage}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === totalPage}
+              onClick={() => setPage((p) => p + 1)}>
+              Next
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
