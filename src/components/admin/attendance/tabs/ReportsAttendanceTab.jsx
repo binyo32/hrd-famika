@@ -111,7 +111,9 @@ const ReportsAttendanceTab = () => {
           .gte("attendance_date", filterStartDate)
           .lte("attendance_date", filterEndDate)
           .order("attendance_date", { ascending: false })
-          .range(from, from + limit - 1);
+.order("id", { ascending: false })   // ← TAMBAHKAN INI
+.range(from, from + limit - 1);
+
 
         if (filterEmployee) {
           query = query.eq("employee_id", filterEmployee);
