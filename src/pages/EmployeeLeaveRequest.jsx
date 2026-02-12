@@ -110,7 +110,7 @@ useEffect(() => {
   }, []);
 
   const fetchMyLeaveRequests = useCallback(async () => {
-    if (!user || !profile.employee_id) return;
+ if (!user || !profile?.employee_id) return;
     setLoading((prev) => ({ ...prev, requests: true }));
     try {
       const { data, error } = await supabase
@@ -129,10 +129,11 @@ useEffect(() => {
     } finally {
       setLoading((prev) => ({ ...prev, requests: false }));
     }
-  }, [user]);
+ }, [user, profile]);
+
 
   const fetchLeaveQuota = useCallback(async () => {
-    if (!user || !profile.employee_id) return;
+ if (!user || !profile?.employee_id) return;
     setLoading((prev) => ({ ...prev, quota: true }));
     try {
       const currentYear = new Date().getFullYear();
@@ -166,15 +167,31 @@ useEffect(() => {
     } finally {
       setLoading((prev) => ({ ...prev, quota: false }));
     }
-  }, [user]);
+ }, [user, profile]);
+
 
   useEffect(() => {
-    fetchLeaveTypes();
+  fetchLeaveTypes();
+}, [fetchLeaveTypes]);
+
+useEffect(() => {
+  if (profile?.employee_id) {
     fetchMyLeaveRequests();
     fetchLeaveQuota();
-  }, [fetchLeaveTypes, fetchMyLeaveRequests, fetchLeaveQuota]);
+  }
+}, [profile, fetchMyLeaveRequests, fetchLeaveQuota]);
+
 
   const handleSubmitLeaveRequest = async () => {
+    if (!profile?.employee_id) {
+  toast({
+    title: "Error",
+    description: "Data karyawan tidak ditemukan.",
+    variant: "destructive",
+  });
+  return;
+}
+
     if (!leaveTypeId || !startDate || !endDate) {
       toast({
         title: "Validasi Gagal",
