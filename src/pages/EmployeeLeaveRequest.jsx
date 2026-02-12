@@ -48,6 +48,8 @@ const EmployeeLeaveRequest = () => {
   const { showSuccessModal } = useSuccessModal();
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [myLeaveRequests, setMyLeaveRequests] = useState([]);
+  const [profile, setProfile] = useState(null);
+
   const [leaveQuota, setLeaveQuota] = useState({
     total_quota: 0,
     used_quota: 0,
@@ -66,6 +68,26 @@ const EmployeeLeaveRequest = () => {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
+  const fetchProfile = useCallback(async () => {
+  if (!user?.id) return;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("employee_id")
+    .eq("id", user.id)
+    .single();
+
+  if (error) {
+    console.error("Profile fetch error:", error);
+    return;
+  }
+
+  setProfile(data);
+}, [user]);
+useEffect(() => {
+  fetchProfile();
+}, [fetchProfile]);
+
 
   const fetchLeaveTypes = useCallback(async () => {
     setLoading((prev) => ({ ...prev, types: true }));
@@ -88,13 +110,13 @@ const EmployeeLeaveRequest = () => {
   }, []);
 
   const fetchMyLeaveRequests = useCallback(async () => {
-    if (!user || !user.id) return;
+    if (!user || !profile.employee_id) return;
     setLoading((prev) => ({ ...prev, requests: true }));
     try {
       const { data, error } = await supabase
         .from("leave_requests")
         .select("*, leave_types(name)")
-        .eq("employee_id", user.id)
+        .eq("employee_id", profile.employee_id)
         .order("requested_at", { ascending: false });
       if (error) throw error;
       setMyLeaveRequests(data);
@@ -110,14 +132,14 @@ const EmployeeLeaveRequest = () => {
   }, [user]);
 
   const fetchLeaveQuota = useCallback(async () => {
-    if (!user || !user.id) return;
+    if (!user || !profile.employee_id) return;
     setLoading((prev) => ({ ...prev, quota: true }));
     try {
       const currentYear = new Date().getFullYear();
       const { data, error } = await supabase
         .from("employee_leave_quotas")
         .select("total_quota, used_quota, remaining_quota")
-        .eq("employee_id", user.id)
+        .eq("employee_id", profile.employee_id)
         .eq("year", currentYear)
         .single();
 
@@ -226,7 +248,7 @@ const EmployeeLeaveRequest = () => {
       const { data, error } = await supabase
         .from("leave_requests")
         .insert({
-          employee_id: user.id,
+         employee_id: profile.employee_id,
           leave_type_id: leaveTypeId,
           start_date: startDate,
           end_date: endDate,
