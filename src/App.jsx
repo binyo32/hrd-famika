@@ -30,6 +30,7 @@ import EmployeeAttendancePage from "@/pages/EmployeeAttendancePage";
 import TeamAttendancePage from "@/pages/TeamAttendancePage";
 import EmployeeTeamPage from "@/pages/EmployeeTeamPage";
 import ForbiddenPage from "./pages/ForbiddenPage";
+import AdminMessages from "./pages/AdminMessages";
 
 function AppContent() {
   const { successModalProps, showSuccessModal, hideSuccessModal } =
@@ -70,6 +71,14 @@ function AppContent() {
             element={
               <ProtectedRoute requiredRoles={[ "Super Admin"]}>
                 <AdminAnnouncements />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/message"
+            element={
+              <ProtectedRoute requiredRoles={[ "Super Admin"]}>
+                <AdminMessages />
               </ProtectedRoute>
             }
           />

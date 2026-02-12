@@ -28,6 +28,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.js?url";
 import AnnouncementPdfDialog from "../components/employee/AnnouncementPdfDialog";
+import MessageDialog from "../components/employee/MessageDialog";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -40,6 +41,10 @@ const EmployeeDashboard = () => {
   const [numPagesMap, setNumPagesMap] = useState({});
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [activePdf, setActivePdf] = useState(null);
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
+  const [activeMessage, setActiveMessage] = useState(null);
+  const [employeeId, setEmployeeId] = useState(null);
+
   const onPdfLoadSuccess =
     (annId) =>
     ({ numPages }) => {
@@ -47,6 +52,79 @@ const EmployeeDashboard = () => {
     };
   const [isMobile, setIsMobile] = useState(false);
   const [zoomMap, setZoomMap] = useState({});
+useEffect(() => {
+  const fetchEmployeeId = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("employee_id")
+      .eq("id", user.id) // profiles.id = auth.users.id
+      .single();
+
+    if (error) {
+      console.error("Profile fetch error:", error);
+      return;
+    }
+
+    if (data?.employee_id) {
+      setEmployeeId(data.employee_id);
+    }
+  };
+
+  fetchEmployeeId();
+}, [user]);
+
+  useEffect(() => {
+    const fetchMessagesForEmployee = async () => {
+      if (!employeeId) return;
+
+     const { data, error } = await supabase
+  .from("messages")
+  .select(`
+    *,
+    profiles:created_by (
+      id,
+      role,
+      employee_id
+    )
+  `)
+  .order("created_at", { ascending: false })
+  .limit(5);
+
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      const filtered = (data || []).filter((msg) => {
+        if (!msg.audience) return false;
+
+        if (msg.audience.type === "all") return true;
+
+        if (msg.audience.type === "specific") {
+          return msg.audience.employee_ids?.includes(employeeId);
+        }
+
+        return false;
+      });
+
+    const seenMessages = getSeenMessages(employeeId);
+
+const unseenMessages = filtered.filter(
+  (msg) => !seenMessages.includes(msg.id)
+);
+
+if (unseenMessages.length > 0) {
+  setActiveMessage(unseenMessages[0]);
+  setMessageDialogOpen(true);
+}
+
+    };
+
+    fetchMessagesForEmployee();
+  }, [employeeId]);
 
   const zoomIn = (id) =>
     setZoomMap((p) => ({ ...p, [id]: Math.min((p[id] || 1) + 0.2, 2.5) }));
@@ -168,6 +246,25 @@ const EmployeeDashboard = () => {
       });
     }
   };
+  const getSeenMessages = (employeeId) => {
+  if (!employeeId) return [];
+  return JSON.parse(
+    localStorage.getItem(`seen_messages_${employeeId}`) || "[]"
+  );
+};
+
+const markMessageAsSeen = (employeeId, messageId) => {
+  const seen = getSeenMessages(employeeId);
+
+  if (!seen.includes(messageId)) {
+    const updated = [...seen, messageId];
+    localStorage.setItem(
+      `seen_messages_${employeeId}`,
+      JSON.stringify(updated)
+    );
+  }
+};
+
 
   return (
     <Layout>
@@ -274,7 +371,8 @@ const EmployeeDashboard = () => {
                                 });
                                 setPdfDialogOpen(true);
                               }}>
-                              <File className="h-4 w-4 mr-2" /> Lihat Lampiran PDF
+                              <File className="h-4 w-4 mr-2" /> Lihat Lampiran
+                              PDF
                             </Button>
                           </div>
                         )}
@@ -334,6 +432,21 @@ const EmployeeDashboard = () => {
         pdfUrl={activePdf?.url}
         title={activePdf?.title}
       />
+  {activeMessage && (
+  <MessageDialog
+    open={messageDialogOpen}
+    onOpenChange={(open) => {
+      setMessageDialogOpen(open);
+
+      if (!open) {
+        markMessageAsSeen(employeeId, activeMessage.id);
+      }
+    }}
+    message={activeMessage}
+  />
+)}
+
+
     </Layout>
   );
 };

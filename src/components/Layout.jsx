@@ -23,6 +23,7 @@ import {
   UserCircle2Icon,
   UserXIcon,
   UserCog2,
+  MessageSquarePlusIcon,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { motion, AnimatePresence } from "framer-motion";
@@ -59,6 +60,7 @@ const getNavLinks = (user, activeRole) => {
       { to: "/admin/employees", icon: Users, text: "Manajemen Karyawan" },
       { to: "/admin/direct-manager", icon: UserCheck, text: "Direct Manager" },
       { to: "/admin/announcements", icon: Megaphone, text: "Pengumuman" },
+      { to: "/admin/message", icon: MessageSquarePlusIcon, text: "Pesan" },
       {
         to: "/admin/leave-management",
         icon: Briefcase,
