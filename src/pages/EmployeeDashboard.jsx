@@ -52,46 +52,47 @@ const EmployeeDashboard = () => {
     };
   const [isMobile, setIsMobile] = useState(false);
   const [zoomMap, setZoomMap] = useState({});
-useEffect(() => {
-  const fetchEmployeeId = async () => {
-    if (!user) return;
+  useEffect(() => {
+    const fetchEmployeeId = async () => {
+      if (!user) return;
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("employee_id")
-      .eq("id", user.id) // profiles.id = auth.users.id
-      .single();
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("employee_id")
+        .eq("id", user.id) // profiles.id = auth.users.id
+        .single();
 
-    if (error) {
-      console.error("Profile fetch error:", error);
-      return;
-    }
+      if (error) {
+        console.error("Profile fetch error:", error);
+        return;
+      }
 
-    if (data?.employee_id) {
-      setEmployeeId(data.employee_id);
-    }
-  };
+      if (data?.employee_id) {
+        setEmployeeId(data.employee_id);
+      }
+    };
 
-  fetchEmployeeId();
-}, [user]);
+    fetchEmployeeId();
+  }, [user]);
 
   useEffect(() => {
     const fetchMessagesForEmployee = async () => {
       if (!employeeId) return;
 
-     const { data, error } = await supabase
-  .from("messages")
-  .select(`
+      const { data, error } = await supabase
+        .from("messages")
+        .select(
+          `
     *,
     profiles:created_by (
       id,
       role,
       employee_id
     )
-  `)
-  .order("created_at", { ascending: false })
-  .limit(5);
-
+  `,
+        )
+        .order("created_at", { ascending: false })
+        .limit(5);
 
       if (error) {
         console.error(error);
@@ -110,17 +111,16 @@ useEffect(() => {
         return false;
       });
 
-    const seenMessages = getSeenMessages(employeeId);
+      const seenMessages = getSeenMessages(employeeId);
 
-const unseenMessages = filtered.filter(
-  (msg) => !seenMessages.includes(msg.id)
-);
+      const unseenMessages = filtered.filter(
+        (msg) => !seenMessages.includes(msg.id),
+      );
 
-if (unseenMessages.length > 0) {
-  setActiveMessage(unseenMessages[0]);
-  setMessageDialogOpen(true);
-}
-
+      if (unseenMessages.length > 0) {
+        setActiveMessage(unseenMessages[0]);
+        setMessageDialogOpen(true);
+      }
     };
 
     fetchMessagesForEmployee();
@@ -247,22 +247,70 @@ if (unseenMessages.length > 0) {
     }
   };
   const getSeenMessages = (employeeId) => {
-  if (!employeeId) return [];
-  return JSON.parse(
-    localStorage.getItem(`seen_messages_${employeeId}`) || "[]"
-  );
-};
-
-const markMessageAsSeen = (employeeId, messageId) => {
-  const seen = getSeenMessages(employeeId);
-
-  if (!seen.includes(messageId)) {
-    const updated = [...seen, messageId];
-    localStorage.setItem(
-      `seen_messages_${employeeId}`,
-      JSON.stringify(updated)
+    if (!employeeId) return [];
+    return JSON.parse(
+      localStorage.getItem(`seen_messages_${employeeId}`) || "[]",
     );
+  };
+
+  const markMessageAsSeen = (employeeId, messageId) => {
+    const seen = getSeenMessages(employeeId);
+
+    if (!seen.includes(messageId)) {
+      const updated = [...seen, messageId];
+      localStorage.setItem(
+        `seen_messages_${employeeId}`,
+        JSON.stringify(updated),
+      );
+    }
+  };
+ const renderContentWithLinks = (text) => {
+  if (!text) return null;
+
+  const urlRegex =
+    /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?)/g;
+
+  const emailRegex =
+    /[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+/g;
+
+  const elements = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    const url = match[0];
+
+    // teks sebelum link
+    if (match.index > lastIndex) {
+      elements.push(text.slice(lastIndex, match.index));
+    }
+
+    let href = url;
+    if (!href.startsWith("http")) {
+      href = "https://" + href;
+    }
+
+    elements.push(
+      <a
+        key={match.index}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 underline break-all"
+      >
+        {url}
+      </a>
+    );
+
+    lastIndex = urlRegex.lastIndex;
   }
+
+  // sisa teks setelah link terakhir
+  if (lastIndex < text.length) {
+    elements.push(text.slice(lastIndex));
+  }
+
+  return elements;
 };
 
 
@@ -355,7 +403,7 @@ const markMessageAsSeen = (employeeId, messageId) => {
                         </CardHeader>
                         <CardContent>
                           <p className="text-sm whitespace-pre-line leading-relaxed">
-                            {ann.content}
+                            {renderContentWithLinks(ann.content)}
                           </p>
                         </CardContent>
 
@@ -432,21 +480,19 @@ const markMessageAsSeen = (employeeId, messageId) => {
         pdfUrl={activePdf?.url}
         title={activePdf?.title}
       />
-  {activeMessage && (
-  <MessageDialog
-    open={messageDialogOpen}
-    onOpenChange={(open) => {
-      setMessageDialogOpen(open);
+      {activeMessage && (
+        <MessageDialog
+          open={messageDialogOpen}
+          onOpenChange={(open) => {
+            setMessageDialogOpen(open);
 
-      if (!open) {
-        markMessageAsSeen(employeeId, activeMessage.id);
-      }
-    }}
-    message={activeMessage}
-  />
-)}
-
-
+            if (!open) {
+              markMessageAsSeen(employeeId, activeMessage.id);
+            }
+          }}
+          message={activeMessage}
+        />
+      )}
     </Layout>
   );
 };
