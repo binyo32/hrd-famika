@@ -40,9 +40,18 @@ const AdminDashboard = () => {
 
 
   const combinedStatus = [
-    ...employmentStatus,
-    ...activeStatusDistribution,
-  ];
+  employmentStatus.find(s => s.name === "Total Karyawan"),
+  employmentStatus.find(s => s.name === "Tetap"),
+  employmentStatus.find(s => s.name === "Kontrak"),
+  employmentStatus.find(s => s.name === "Magang"),
+  employmentStatus.find(s => s.name === "Tidak Diketahui"),
+
+  activeStatusDistribution.find(s => s.name === "Aktif"),
+  activeStatusDistribution.find(s => s.name === "Tidak Aktif"),
+  activeStatusDistribution.find(s => s.name === "Cuti"),
+  activeStatusDistribution.find(s => s.name === "Resign"),
+].filter(Boolean);
+
 
   const handleQuickView = (filter, title) => {
     let filteredEmployees = [];
