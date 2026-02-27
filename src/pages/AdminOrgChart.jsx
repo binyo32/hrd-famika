@@ -139,7 +139,7 @@ const AdminOrgChart = () => {
     });
 
     const companyNode = {
-      name: 'PT. Famika Tunas Mandiri',
+      name: 'PT. Fajar Mitra Krida Abadi (FAMIKA)',
       isCompany: true,
       children: Array.from(locationsMap.entries()).map(([locationName, divisionsMap]) => ({
         name: locationName,

@@ -19,16 +19,39 @@ const AdminMessages = () => {
   }, []);
 
   const fetchEmployees = async () => {
-    const { data } = await supabase.from("employees").select("id, name");
+  const pageSize = 1000;
+  let from = 0;
+  let allEmployees = [];
+  let done = false;
 
-    if (data) {
-      const map = {};
-      data.forEach((emp) => {
-        map[emp.id] = emp.name;
-      });
-      setEmployeesMap(map);
+  while (!done) {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("id, name")
+      .order("name", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      console.error(error);
+      break;
     }
-  };
+
+    allEmployees = [...allEmployees, ...data];
+
+    if (data.length < pageSize) {
+      done = true;
+    } else {
+      from += pageSize;
+    }
+  }
+
+  const map = {};
+  allEmployees.forEach(emp => {
+    map[emp.id] = emp.name;
+  });
+
+  setEmployeesMap(map);
+};
 
   const fetchMessages = async () => {
     setLoading(true);
@@ -52,7 +75,6 @@ const AdminMessages = () => {
 
     if (!error) {
       setMessages(data);
-      console.log(data);
     }
     setLoading(false);
   };
