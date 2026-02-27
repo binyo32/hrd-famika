@@ -36,6 +36,7 @@ import UpdateLocationDialog from "../components/employee/attendance/UpdateLocati
 import LocationLogsTable from "../components/employee/attendance/LocationLogsTable";
 import CheckoutBlockedDialog from "../components/employee/attendance/CheckoutBlockedDialog";
 import WorkHourWarningDialog from "../components/employee/attendance/WorkHourWarningDialog";
+import DeviceTokenDialog from "../components/employee/attendance/DeviceTokenDialog";
 
 const EmployeeAttendancePage = () => {
   const { user } = useAuth();
@@ -69,6 +70,9 @@ const EmployeeAttendancePage = () => {
   const [showCheckoutBlocked, setShowCheckoutBlocked] = useState(false);
   const [showWorkHourAlert, setShowWorkHourAlert] = useState(false);
   const [workDurationHours, setWorkDurationHours] = useState(0);
+  const [hasDeviceToken, setHasDeviceToken] = useState(null);
+  const [showDeviceTokenDialog, setShowDeviceTokenDialog] = useState(false);
+  const [checkingDeviceToken, setCheckingDeviceToken] = useState(false);
   const getWorkDurationHours = (checkInTime) => {
     const checkIn = new Date(checkInTime);
     const now = new Date();
@@ -147,6 +151,26 @@ const EmployeeAttendancePage = () => {
       setLoading((prev) => ({ ...prev, history: false }));
     }
   }, [user]);
+  const checkDeviceToken = async () => {
+    if (!user?.employeeData?.id) return false;
+
+    setCheckingDeviceToken(true);
+
+    const { data, error } = await supabase
+      .from("device_tokens")
+      .select("id")
+      .eq("employee_id", user.employeeData.id)
+      .limit(1);
+
+    setCheckingDeviceToken(false);
+
+    if (error) {
+      console.error("Device token check error:", error);
+      return false;
+    }
+
+    return data && data.length > 0;
+  };
 
   useEffect(() => {
     fetchTodayAttendance();
@@ -436,6 +460,10 @@ const EmployeeAttendancePage = () => {
           onAllow={requestLocation}
         />
       )}
+      <DeviceTokenDialog
+        open={showDeviceTokenDialog}
+        onClose={() => setShowDeviceTokenDialog(false)}
+      />
       <CheckInDialog
         open={showCheckInFlow}
         onClose={resetCheckInFlow}
@@ -568,7 +596,17 @@ const EmployeeAttendancePage = () => {
                     )}
                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <Button
-                      onClick={() => setShowCheckInFlow(true)}
+                      onClick={async () => {
+                        const exists = await checkDeviceToken();
+
+                        if (exists) {
+                          setHasDeviceToken(true);
+                          setShowDeviceTokenDialog(true);
+                          return; // STOP → jangan buka kamera
+                        }
+
+                        setShowCheckInFlow(true); // lanjut kamera jika belum ada
+                      }}
                       disabled={!canCheckIn || loading.checkInOut}
                       className="flex-1 bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white text-lg py-6">
                       <LogIn className="mr-2 h-5 w-5" />{" "}
@@ -583,7 +621,7 @@ const EmployeeAttendancePage = () => {
                           setShowCheckoutBlocked(true);
                           return;
                         }
-                      // check work duration hidupkan ini
+                        // check work duration hidupkan ini
                         // const hours = getWorkDurationHours(
                         //   todayAttendance.check_in_time,
                         // );
