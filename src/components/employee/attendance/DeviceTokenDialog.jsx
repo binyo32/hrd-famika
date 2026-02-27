@@ -34,9 +34,12 @@ const DeviceTokenDialog = ({ open, onClose }) => {
         </p>
 
         <div className="flex justify-end gap-2">
-          <Button onClick={handleOpenApp}>
-           Lanjutkan di Aplikasi
-          </Button>
+          <a
+            href="https://play.google.com/store/apps/details?id=com.famika.absence"
+            target="_blank"
+            rel="noopener noreferrer">
+            <Button variant="default">Lanjutkan di Aplikasi</Button>
+          </a>
         </div>
       </div>
     </div>
