@@ -14,6 +14,7 @@ const columnConfig = [
   { key: 'age', label: 'Usia' },
   { key: 'position', label: 'Jabatan' },
   { key: 'division', label: 'Divisi' },
+  { key: 'workLocation', label: 'Lokasi Kerja' },
   { key: 'workDurationYears', label: 'Masa Kerja' },
   { key: 'status', label: 'Status Karyawan' },
   { key: 'activeStatus', label: 'Status Aktif' },
