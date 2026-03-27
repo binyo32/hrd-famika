@@ -102,7 +102,7 @@ const ReportsAttendanceTab = () => {
           .select(
             `
   *,
-  employee:employees!attendance_records_employee_id_fkey (name, nik),
+  employee:employees!attendance_records_employee_id_fkey (name, nik, work_location),
   direct_pm:employees!attendance_records_direct_pm_id_fkey (name),
   attendance_statuses (name)
 `,
@@ -345,6 +345,7 @@ const ReportsAttendanceTab = () => {
             setPage(1);
           }}
           showDirectManager={checkinFilter === "unchecked"}
+          showWorkLocation={checkinFilter === "checked"}
         />
 
         <Pagination

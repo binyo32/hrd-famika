@@ -16,6 +16,7 @@ const excelData = records.map((row, index) => ({
   "Nama Karyawan": row.employee?.name || "-",
   NIK: row.employee?.nik || "-",
   "Nama PM": row.direct_pm?.name || "-",
+  "Lokasi Kerja": row.employee?.work_location || "-",
   "Keterangan/Project": row.project || "-",
 
   "Check In": row.isUnchecked
@@ -46,6 +47,8 @@ const excelData = records.map((row, index) => ({
   { wch: 12 },
   { wch: 25 },
   { wch: 15 },
+  { wch: 25 },
+  { wch: 18 },
   { wch: 25 },
   { wch: 12 },
   { wch: 12 },

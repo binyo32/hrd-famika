@@ -67,6 +67,7 @@ const AttendanceReportTable = ({
   totalRecords,
   onPageSizeChange,
   showDirectManager = false,
+  showWorkLocation = false,
 }) => {
   return (
     <div className="overflow-x-auto">
@@ -110,6 +111,7 @@ const AttendanceReportTable = ({
               sort={sort}
               onSortChange={onSortChange}
             />
+            {showWorkLocation && <TableHead>Lokasi Kerja</TableHead>}
             {showDirectManager && <TableHead>Direct Manager</TableHead>}
             <TableHead>Keterangan/Project</TableHead>
             <TableHead>Tanggal</TableHead>
@@ -154,6 +156,9 @@ const AttendanceReportTable = ({
                 <TableCell>{record.employee?.name || "N/A"}</TableCell>
                 <TableCell>{record.employee?.nik || "N/A"}</TableCell>
                 <TableCell>{record.direct_pm?.name || "N/A"}</TableCell>
+                {showWorkLocation && (
+                  <TableCell>{record.employee?.work_location || "N/A"}</TableCell>
+                )}
                 {showDirectManager && (
                   <TableCell>{record.direct_manager?.name || "N/A"}</TableCell>
                 )}
