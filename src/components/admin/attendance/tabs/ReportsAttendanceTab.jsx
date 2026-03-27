@@ -65,7 +65,7 @@ const ReportsAttendanceTab = () => {
       while (true) {
         const { data, error } = await supabase
           .from("employees")
-          .select("id, name, nik, manager:employees!direct_manager_id(name)")
+          .select("*, manager:direct_manager_id ( name )")
           .order("name")
           .range(from, from + limit - 1);
 
