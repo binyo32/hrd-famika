@@ -66,6 +66,7 @@ const AttendanceReportTable = ({
   pageSize,
   totalRecords,
   onPageSizeChange,
+  showDirectManager = false,
 }) => {
   return (
     <div className="overflow-x-auto">
@@ -109,6 +110,7 @@ const AttendanceReportTable = ({
               sort={sort}
               onSortChange={onSortChange}
             />
+            {showDirectManager && <TableHead>Direct Manager</TableHead>}
             <TableHead>Keterangan/Project</TableHead>
             <TableHead>Tanggal</TableHead>
             <SortableTh
@@ -136,13 +138,13 @@ const AttendanceReportTable = ({
         <TableBody>
           {loading ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center">
+              <TableCell colSpan={showDirectManager ? 10 : 9} className="text-center">
                 Memuat...
               </TableCell>
             </TableRow>
           ) : records.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center">
+              <TableCell colSpan={showDirectManager ? 10 : 9} className="text-center">
                 Tidak ada data.
               </TableCell>
             </TableRow>
@@ -152,6 +154,9 @@ const AttendanceReportTable = ({
                 <TableCell>{record.employee?.name || "N/A"}</TableCell>
                 <TableCell>{record.employee?.nik || "N/A"}</TableCell>
                 <TableCell>{record.direct_pm?.name || "N/A"}</TableCell>
+                {showDirectManager && (
+                  <TableCell>{record.direct_manager?.name || "N/A"}</TableCell>
+                )}
                 <TableCell>{record.project || "N/A"}</TableCell>
                 <TableCell>
                   {record.attendance_date &&

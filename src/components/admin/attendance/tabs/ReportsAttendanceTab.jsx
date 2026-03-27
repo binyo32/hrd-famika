@@ -65,7 +65,7 @@ const ReportsAttendanceTab = () => {
       while (true) {
         const { data, error } = await supabase
           .from("employees")
-          .select("id, name, nik")
+          .select("id, name, nik, manager:employees!direct_manager_id(name)")
           .order("name")
           .range(from, from + limit - 1);
 
@@ -159,6 +159,7 @@ const ReportsAttendanceTab = () => {
         name: emp.name,
         nik: emp.nik,
       },
+      direct_manager: emp.manager || null,
       attendance_date: `${filterStartDate} - ${filterEndDate}`,
       check_in_time: null,
       check_out_time: null,
@@ -343,6 +344,7 @@ const ReportsAttendanceTab = () => {
             setPageSize(size);
             setPage(1);
           }}
+          showDirectManager={checkinFilter === "unchecked"}
         />
 
         <Pagination
