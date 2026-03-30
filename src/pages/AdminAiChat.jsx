@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import Layout from "@/components/Layout";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Bot, Send, User, Trash2, Loader2 } from "lucide-react";
@@ -9,6 +8,218 @@ import { useAuth } from "@/contexts/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 
 const SUPA_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
+
+function renderMarkdown(text) {
+  if (!text) return null;
+
+  const lines = text.split("\n");
+  const elements = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Heading
+    if (line.startsWith("### ")) {
+      elements.push(
+        <h3 key={i} className="text-base font-bold mt-3 mb-1">
+          {renderInline(line.slice(4))}
+        </h3>
+      );
+      i++;
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      elements.push(
+        <h2 key={i} className="text-lg font-bold mt-3 mb-1">
+          {renderInline(line.slice(3))}
+        </h2>
+      );
+      i++;
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      elements.push(
+        <h1 key={i} className="text-xl font-bold mt-3 mb-1">
+          {renderInline(line.slice(2))}
+        </h1>
+      );
+      i++;
+      continue;
+    }
+
+    // Code block
+    if (line.startsWith("```")) {
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      elements.push(
+        <pre
+          key={`code-${i}`}
+          className="bg-zinc-900 text-zinc-100 rounded-lg p-3 my-2 overflow-x-auto text-sm font-mono"
+        >
+          <code>{codeLines.join("\n")}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    // Unordered list item
+    if (/^[\*\-]\s/.test(line)) {
+      const listItems = [];
+      while (i < lines.length && /^[\*\-]\s/.test(lines[i])) {
+        listItems.push(lines[i].replace(/^[\*\-]\s/, ""));
+        i++;
+      }
+      elements.push(
+        <ul key={`ul-${i}`} className="list-disc list-inside space-y-1 my-1.5">
+          {listItems.map((item, j) => (
+            <li key={j}>{renderInline(item)}</li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    // Ordered list item
+    if (/^\d+[\.\)]\s/.test(line)) {
+      const listItems = [];
+      while (i < lines.length && /^\d+[\.\)]\s/.test(lines[i])) {
+        listItems.push(lines[i].replace(/^\d+[\.\)]\s/, ""));
+        i++;
+      }
+      elements.push(
+        <ol
+          key={`ol-${i}`}
+          className="list-decimal list-inside space-y-1 my-1.5"
+        >
+          {listItems.map((item, j) => (
+            <li key={j}>{renderInline(item)}</li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+
+    // Empty line = spacing
+    if (line.trim() === "") {
+      elements.push(<div key={i} className="h-2" />);
+      i++;
+      continue;
+    }
+
+    // Normal paragraph
+    elements.push(
+      <p key={i} className="my-0.5">
+        {renderInline(line)}
+      </p>
+    );
+    i++;
+  }
+
+  return elements;
+}
+
+function renderInline(text) {
+  // Split by inline patterns: **bold**, *italic*, `code`
+  const parts = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Bold **text**
+    const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+    // Inline code `text`
+    const codeMatch = remaining.match(/`([^`]+)`/);
+    // Italic *text* (but not **)
+    const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
+
+    // Find earliest match
+    const matches = [
+      boldMatch && { type: "bold", match: boldMatch },
+      codeMatch && { type: "code", match: codeMatch },
+      italicMatch && { type: "italic", match: italicMatch },
+    ]
+      .filter(Boolean)
+      .sort((a, b) => a.match.index - b.match.index);
+
+    if (matches.length === 0) {
+      parts.push(<span key={key++}>{remaining}</span>);
+      break;
+    }
+
+    const first = matches[0];
+    const idx = first.match.index;
+
+    if (idx > 0) {
+      parts.push(<span key={key++}>{remaining.slice(0, idx)}</span>);
+    }
+
+    if (first.type === "bold") {
+      parts.push(
+        <strong key={key++} className="font-semibold">
+          {first.match[1]}
+        </strong>
+      );
+      remaining = remaining.slice(idx + first.match[0].length);
+    } else if (first.type === "code") {
+      parts.push(
+        <code
+          key={key++}
+          className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono"
+        >
+          {first.match[1]}
+        </code>
+      );
+      remaining = remaining.slice(idx + first.match[0].length);
+    } else if (first.type === "italic") {
+      parts.push(
+        <em key={key++} className="italic">
+          {first.match[1]}
+        </em>
+      );
+      remaining = remaining.slice(idx + first.match[0].length);
+    }
+  }
+
+  return parts;
+}
+
+function AssistantMessage({ content }) {
+  const rendered = useMemo(() => renderMarkdown(content), [content]);
+  return (
+    <div className="flex gap-3 w-full">
+      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mt-0.5">
+        <Bot className="h-3.5 w-3.5 text-white" />
+      </div>
+      <div className="flex-1 min-w-0 text-sm leading-relaxed text-foreground">
+        {rendered || (
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Mengetik...
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UserMessage({ content }) {
+  return (
+    <div className="flex gap-3 justify-end w-full">
+      <div className="max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed bg-primary text-primary-foreground">
+        {content}
+      </div>
+      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mt-0.5">
+        <User className="h-3.5 w-3.5 text-white" />
+      </div>
+    </div>
+  );
+}
 
 export default function AdminAiChat() {
   const { user } = useAuth();
@@ -22,7 +233,6 @@ export default function AdminAiChat() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
-  const textareaRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -42,7 +252,6 @@ export default function AdminAiChat() {
     setInput("");
     setIsLoading(true);
 
-    // Add placeholder for assistant response
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
     try {
@@ -105,13 +314,11 @@ export default function AdminAiChat() {
       }
 
       if (!fullContent) {
-        // Fallback: try parsing as plain JSON
-        const text = await new Response(chunk).text();
         setMessages((prev) => {
           const updated = [...prev];
           updated[updated.length - 1] = {
             role: "assistant",
-            content: text || "Maaf, tidak ada respon dari AI.",
+            content: "Maaf, tidak ada respon dari AI.",
           };
           return updated;
         });
@@ -150,92 +357,81 @@ export default function AdminAiChat() {
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-8rem)]">
+      <div className="flex flex-col h-[calc(100vh-5rem)] -m-4 sm:-m-6 md:-m-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              AI Assistant
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Tanyakan apapun seputar HRD & manajemen karyawan
-            </p>
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-card/50 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <Bot className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                AI Assistant
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Tanyakan apapun seputar HRD & manajemen karyawan
+              </p>
+            </div>
           </div>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={handleClear}
-            className="gap-2"
+            className="gap-2 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-4 w-4" />
-            Hapus Chat
+            <span className="hidden sm:inline">Hapus Chat</span>
           </Button>
         </div>
 
         {/* Messages */}
-        <Card className="flex-1 overflow-y-auto p-4 space-y-4 mb-4">
-          <AnimatePresence initial={false}>
-            {messages.map((msg, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                {msg.role === "assistant" && (
-                  <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-white" />
-                  </div>
-                )}
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  }`}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+            <AnimatePresence initial={false}>
+              {messages.map((msg, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15 }}
                 >
-                  {msg.content || (
-                    <span className="flex items-center gap-2 text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Mengetik...
-                    </span>
+                  {msg.role === "assistant" ? (
+                    <AssistantMessage content={msg.content} />
+                  ) : (
+                    <UserMessage content={msg.content} />
                   )}
-                </div>
-                {msg.role === "user" && (
-                  <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-                    <User className="h-4 w-4 text-white" />
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          <div ref={messagesEndRef} />
-        </Card>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
 
         {/* Input */}
-        <div className="flex gap-2">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ketik pesan... (Enter untuk kirim, Shift+Enter untuk baris baru)"
-            className="resize-none min-h-[48px] max-h-[120px]"
-            rows={1}
-            disabled={isLoading}
-          />
-          <Button
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading}
-            className="px-4 self-end bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
+        <div className="border-t border-border bg-card/50 backdrop-blur-sm px-4 py-3">
+          <div className="max-w-3xl mx-auto flex gap-2">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ketik pesan... (Enter untuk kirim, Shift+Enter untuk baris baru)"
+              className="resize-none min-h-[44px] max-h-[120px]"
+              rows={1}
+              disabled={isLoading}
+            />
+            <Button
+              onClick={handleSend}
+              disabled={!input.trim() || isLoading}
+              size="icon"
+              className="h-[44px] w-[44px] flex-shrink-0 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </Layout>
