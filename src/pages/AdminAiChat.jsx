@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +8,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 
 const SUPA_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
+
+/* ───────────── Markdown Renderer ───────────── */
 
 function renderMarkdown(text) {
   if (!text) return null;
@@ -19,7 +21,6 @@ function renderMarkdown(text) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Heading
     if (line.startsWith("### ")) {
       elements.push(
         <h3 key={i} className="text-base font-bold mt-3 mb-1">
@@ -48,7 +49,6 @@ function renderMarkdown(text) {
       continue;
     }
 
-    // Code block
     if (line.startsWith("```")) {
       const codeLines = [];
       i++;
@@ -56,7 +56,7 @@ function renderMarkdown(text) {
         codeLines.push(lines[i]);
         i++;
       }
-      i++; // skip closing ```
+      i++;
       elements.push(
         <pre
           key={`code-${i}`}
@@ -68,7 +68,6 @@ function renderMarkdown(text) {
       continue;
     }
 
-    // Unordered list item
     if (/^[\*\-]\s/.test(line)) {
       const listItems = [];
       while (i < lines.length && /^[\*\-]\s/.test(lines[i])) {
@@ -85,7 +84,6 @@ function renderMarkdown(text) {
       continue;
     }
 
-    // Ordered list item
     if (/^\d+[\.\)]\s/.test(line)) {
       const listItems = [];
       while (i < lines.length && /^\d+[\.\)]\s/.test(lines[i])) {
@@ -105,14 +103,12 @@ function renderMarkdown(text) {
       continue;
     }
 
-    // Empty line = spacing
     if (line.trim() === "") {
       elements.push(<div key={i} className="h-2" />);
       i++;
       continue;
     }
 
-    // Normal paragraph
     elements.push(
       <p key={i} className="my-0.5">
         {renderInline(line)}
@@ -125,20 +121,15 @@ function renderMarkdown(text) {
 }
 
 function renderInline(text) {
-  // Split by inline patterns: **bold**, *italic*, `code`
   const parts = [];
   let remaining = text;
   let key = 0;
 
   while (remaining.length > 0) {
-    // Bold **text**
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
-    // Inline code `text`
     const codeMatch = remaining.match(/`([^`]+)`/);
-    // Italic *text* (but not **)
     const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
 
-    // Find earliest match
     const matches = [
       boldMatch && { type: "bold", match: boldMatch },
       codeMatch && { type: "code", match: codeMatch },
@@ -165,7 +156,6 @@ function renderInline(text) {
           {first.match[1]}
         </strong>
       );
-      remaining = remaining.slice(idx + first.match[0].length);
     } else if (first.type === "code") {
       parts.push(
         <code
@@ -175,52 +165,32 @@ function renderInline(text) {
           {first.match[1]}
         </code>
       );
-      remaining = remaining.slice(idx + first.match[0].length);
     } else if (first.type === "italic") {
       parts.push(
         <em key={key++} className="italic">
           {first.match[1]}
         </em>
       );
-      remaining = remaining.slice(idx + first.match[0].length);
     }
+    remaining = remaining.slice(idx + first.match[0].length);
   }
 
   return parts;
 }
 
-function FadeInBlock({ children, delay }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: "easeOut", delay }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+/* ───────────── Message Components ───────────── */
 
-function AssistantMessage({ content, isStreaming }) {
+function AssistantMessage({ content, isAnimating }) {
   const rendered = useMemo(() => renderMarkdown(content), [content]);
-  const prevCountRef = useRef(0);
+  const prevBlockCountRef = useRef(0);
+  const blockCount = rendered ? rendered.length : 0;
 
-  const count = rendered ? rendered.length : 0;
-
-  // Track which elements are "new" so only they get a fade delay
-  const stableCount = useRef(0);
   useEffect(() => {
-    if (!isStreaming) {
-      stableCount.current = count;
-    }
-  }, [isStreaming, count]);
-
-  // After streaming ends, lock the count so nothing re-animates
-  useEffect(() => {
-    if (!isStreaming) {
-      prevCountRef.current = count;
-    }
-  }, [isStreaming, count]);
+    const t = setTimeout(() => {
+      prevBlockCountRef.current = blockCount;
+    }, 350);
+    return () => clearTimeout(t);
+  }, [blockCount]);
 
   return (
     <div className="flex gap-3 w-full">
@@ -234,13 +204,19 @@ function AssistantMessage({ content, isStreaming }) {
             Mengetik...
           </span>
         ) : (
-          <AnimatePresence initial={false}>
-            {rendered.map((el, i) => (
-              <FadeInBlock key={i} delay={isStreaming && i >= prevCountRef.current ? 0.05 : 0}>
+          rendered.map((el, i) => {
+            const isNew = isAnimating && i >= prevBlockCountRef.current;
+            return (
+              <motion.div
+                key={`b-${i}`}
+                initial={isNew ? { opacity: 0, x: -12 } : false}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+              >
                 {el}
-              </FadeInBlock>
-            ))}
-          </AnimatePresence>
+              </motion.div>
+            );
+          })
         )}
       </div>
     </div>
@@ -260,18 +236,26 @@ function UserMessage({ content }) {
   );
 }
 
+/* ───────────── Main Component ───────────── */
+
 export default function AdminAiChat() {
   const { user } = useAuth();
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content:
-        "Halo! Saya AI Assistant HRD Famika. Ada yang bisa saya bantu?",
+      content: "Halo! Saya AI Assistant HRD Famika. Ada yang bisa saya bantu?",
     },
   ]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const [animatingIdx, setAnimatingIdx] = useState(-1);
   const messagesEndRef = useRef(null);
+
+  // Reveal system: characters are revealed gradually, trailing behind the stream
+  const fullContentRef = useRef("");
+  const revealedLenRef = useRef(0);
+  const revealIntervalRef = useRef(null);
+  const streamDoneRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -281,17 +265,68 @@ export default function AdminAiChat() {
     scrollToBottom();
   }, [messages]);
 
+  const stopReveal = useCallback(() => {
+    if (revealIntervalRef.current) {
+      clearInterval(revealIntervalRef.current);
+      revealIntervalRef.current = null;
+    }
+  }, []);
+
+  const startReveal = useCallback(
+    (assistantIdx) => {
+      stopReveal();
+      revealIntervalRef.current = setInterval(() => {
+        const full = fullContentRef.current;
+        const current = revealedLenRef.current;
+
+        if (current < full.length) {
+          // Adaptive speed: faster when far behind, gentle finish
+          const backlog = full.length - current;
+          const step = Math.max(1, Math.ceil(backlog / 12));
+          revealedLenRef.current = Math.min(current + step, full.length);
+
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[assistantIdx] = {
+              role: "assistant",
+              content: full.slice(0, revealedLenRef.current),
+            };
+            return updated;
+          });
+        } else if (streamDoneRef.current) {
+          // Stream ended and all chars revealed
+          stopReveal();
+          setIsBusy(false);
+          setAnimatingIdx(-1);
+        }
+      }, 20);
+    },
+    [stopReveal]
+  );
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => stopReveal();
+  }, [stopReveal]);
+
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || isLoading) return;
+    if (!text || isBusy) return;
 
     const userMessage = { role: "user", content: text };
     const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setInput("");
-    setIsLoading(true);
+    const assistantIdx = newMessages.length; // index of the new assistant placeholder
 
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    setMessages([...newMessages, { role: "assistant", content: "" }]);
+    setInput("");
+    setIsBusy(true);
+    setAnimatingIdx(assistantIdx);
+
+    fullContentRef.current = "";
+    revealedLenRef.current = 0;
+    streamDoneRef.current = false;
+
+    startReveal(assistantIdx);
 
     try {
       const {
@@ -320,7 +355,6 @@ export default function AdminAiChat() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let fullContent = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -339,41 +373,23 @@ export default function AdminAiChat() {
               parsed.choices?.[0]?.delta?.content ||
               parsed.candidates?.[0]?.content?.parts?.[0]?.text ||
               "";
-            fullContent += delta;
-            setMessages((prev) => {
-              const updated = [...prev];
-              updated[updated.length - 1] = {
-                role: "assistant",
-                content: fullContent,
-              };
-              return updated;
-            });
+            // Only fill the buffer — the interval handles display
+            fullContentRef.current += delta;
           } catch {}
         }
       }
 
-      if (!fullContent) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: "assistant",
-            content: "Maaf, tidak ada respon dari AI.",
-          };
-          return updated;
-        });
+      if (!fullContentRef.current) {
+        fullContentRef.current = "Maaf, tidak ada respon dari AI.";
       }
     } catch (error) {
       console.error("AI Chat error:", error);
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          role: "assistant",
-          content: "Maaf, terjadi kesalahan. Silakan coba lagi.",
-        };
-        return updated;
-      });
+      fullContentRef.current =
+        fullContentRef.current || "Maaf, terjadi kesalahan. Silakan coba lagi.";
     } finally {
-      setIsLoading(false);
+      streamDoneRef.current = true;
+      // Don't setIsBusy(false) here — the reveal interval will do it
+      // when all characters have been shown
     }
   };
 
@@ -385,11 +401,16 @@ export default function AdminAiChat() {
   };
 
   const handleClear = () => {
+    stopReveal();
+    fullContentRef.current = "";
+    revealedLenRef.current = 0;
+    streamDoneRef.current = false;
+    setIsBusy(false);
+    setAnimatingIdx(-1);
     setMessages([
       {
         role: "assistant",
-        content:
-          "Halo! Saya AI Assistant HRD Famika. Ada yang bisa saya bantu?",
+        content: "Halo! Saya AI Assistant HRD Famika. Ada yang bisa saya bantu?",
       },
     ]);
   };
@@ -437,7 +458,7 @@ export default function AdminAiChat() {
                   {msg.role === "assistant" ? (
                     <AssistantMessage
                       content={msg.content}
-                      isStreaming={isLoading && i === messages.length - 1}
+                      isAnimating={i === animatingIdx}
                     />
                   ) : (
                     <UserMessage content={msg.content} />
@@ -459,15 +480,15 @@ export default function AdminAiChat() {
               placeholder="Ketik pesan... (Enter untuk kirim, Shift+Enter untuk baris baru)"
               className="resize-none min-h-[44px] max-h-[120px]"
               rows={1}
-              disabled={isLoading}
+              disabled={isBusy}
             />
             <Button
               onClick={handleSend}
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isBusy}
               size="icon"
               className="h-[44px] w-[44px] flex-shrink-0 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
             >
-              {isLoading ? (
+              {isBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Send className="h-4 w-4" />
