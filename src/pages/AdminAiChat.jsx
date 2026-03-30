@@ -464,110 +464,72 @@ function HistorySidebar({ conversations, activeId, onSelect, onNew, onDelete, is
   );
 }
 
-/* ───────────── Search Indicator ───────────── */
+/* ───────────── Search Indicator (compact) ───────────── */
 
-function SearchIndicator({ searchState }) {
-  if (!searchState || searchState.status === "idle") return null;
+function SearchIndicator({ searchState, sources, isBusy }) {
+  const [expanded, setExpanded] = useState(false);
+  const isSearching = searchState?.status === "searching" || searchState?.status === "results";
+  const isDone = searchState?.status === "done" || (!isBusy && sources?.length > 0);
+  const allSources = sources?.length > 0 ? sources : searchState?.results || [];
+  const count = allSources.length;
+
+  if (!isSearching && !isDone) return null;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex gap-3 w-full"
+      className="pl-10"
     >
-      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center mt-0.5">
-        <Globe className="h-3.5 w-3.5 text-white" />
-      </div>
-      <div className="flex-1 min-w-0">
-        {/* Searching status */}
-        {searchState.status === "searching" && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Search className="h-3.5 w-3.5 animate-pulse" />
-            <span>Mencari di web: <strong className="text-foreground">{searchState.query}</strong></span>
+      <button
+        onClick={() => isDone && setExpanded(!expanded)}
+        className={`inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border transition-all ${
+          isSearching
+            ? "border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400"
+            : "border-border bg-muted/50 text-muted-foreground hover:bg-muted cursor-pointer"
+        }`}
+      >
+        {isSearching ? (
+          <>
             <Loader2 className="h-3 w-3 animate-spin" />
-          </div>
+            <span>Mencari "{searchState.query}"...</span>
+          </>
+        ) : (
+          <>
+            <Globe className="h-3 w-3" />
+            <span>{count} sumber ditemukan</span>
+            <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </>
         )}
+      </button>
 
-        {/* Search results coming in */}
-        {searchState.status === "results" && (
-          <div className="text-sm">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
-              <Search className="h-3.5 w-3.5" />
-              <span>Hasil pencarian: <strong className="text-foreground">{searchState.query}</strong></span>
-              {!searchState.done && <Loader2 className="h-3 w-3 animate-spin" />}
-            </div>
-            <div className="space-y-1 pl-0.5">
-              {searchState.results.map((r, i) => (
-                <motion.a
-                  key={i}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05, duration: 0.2 }}
-                  href={r.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs text-primary hover:underline underline-offset-2 py-0.5"
-                >
-                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                  <span className="truncate">{r.title}</span>
-                </motion.a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Search done */}
-        {searchState.status === "done" && (
-          <div className="text-sm">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
-              <Search className="h-3.5 w-3.5 text-green-500" />
-              <span>Ditemukan {searchState.results.length} sumber untuk: <strong className="text-foreground">{searchState.query}</strong></span>
-            </div>
-            <div className="space-y-1 pl-0.5">
-              {searchState.results.map((r, i) => (
+      <AnimatePresence>
+        {expanded && isDone && count > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {allSources.map((s, i) => (
                 <a
                   key={i}
-                  href={r.url}
+                  href={s.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-xs text-primary hover:underline underline-offset-2 py-0.5"
+                  className="inline-flex items-center gap-1 text-xs bg-muted/70 hover:bg-muted px-2.5 py-1 rounded-full text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                  <span className="truncate">{r.title}</span>
+                  <ExternalLink className="h-2.5 w-2.5" />
+                  <span className="truncate max-w-[180px]">{s.title}</span>
                 </a>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </motion.div>
-  );
-}
-
-/* ───────────── Sources Footer ───────────── */
-
-function SourcesFooter({ sources }) {
-  if (!sources || sources.length === 0) return null;
-  return (
-    <div className="mt-2 pt-2 border-t border-border/50">
-      <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-        <Globe className="h-3 w-3" /> Sumber:
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {sources.map((s, i) => (
-          <a
-            key={i}
-            href={s.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-md text-primary hover:bg-muted/80 transition-colors"
-          >
-            <ExternalLink className="h-3 w-3" />
-            <span className="truncate max-w-[200px]">{s.title}</span>
-          </a>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -1033,20 +995,9 @@ export default function AdminAiChat() {
                 ))}
               </AnimatePresence>
 
-              {/* Search indicator - shown while searching */}
-              {searchState.status !== "idle" && (
-                <SearchIndicator searchState={searchState} />
-              )}
-
-              {/* Sources footer - shown after response with web search */}
-              {!isBusy && lastSources.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="pl-10"
-                >
-                  <SourcesFooter sources={lastSources} />
-                </motion.div>
+              {/* Search indicator - compact pill */}
+              {(searchState.status !== "idle" || lastSources.length > 0) && (
+                <SearchIndicator searchState={searchState} sources={lastSources} isBusy={isBusy} />
               )}
 
               <div ref={messagesEndRef} />
