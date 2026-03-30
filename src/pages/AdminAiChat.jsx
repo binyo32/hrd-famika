@@ -15,6 +15,9 @@ import {
   ChevronDown,
   Sparkles,
   Cpu,
+  Globe,
+  Search,
+  ExternalLink,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -461,6 +464,113 @@ function HistorySidebar({ conversations, activeId, onSelect, onNew, onDelete, is
   );
 }
 
+/* ───────────── Search Indicator ───────────── */
+
+function SearchIndicator({ searchState }) {
+  if (!searchState || searchState.status === "idle") return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex gap-3 w-full"
+    >
+      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center mt-0.5">
+        <Globe className="h-3.5 w-3.5 text-white" />
+      </div>
+      <div className="flex-1 min-w-0">
+        {/* Searching status */}
+        {searchState.status === "searching" && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Search className="h-3.5 w-3.5 animate-pulse" />
+            <span>Mencari di web: <strong className="text-foreground">{searchState.query}</strong></span>
+            <Loader2 className="h-3 w-3 animate-spin" />
+          </div>
+        )}
+
+        {/* Search results coming in */}
+        {searchState.status === "results" && (
+          <div className="text-sm">
+            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
+              <Search className="h-3.5 w-3.5" />
+              <span>Hasil pencarian: <strong className="text-foreground">{searchState.query}</strong></span>
+              {!searchState.done && <Loader2 className="h-3 w-3 animate-spin" />}
+            </div>
+            <div className="space-y-1 pl-0.5">
+              {searchState.results.map((r, i) => (
+                <motion.a
+                  key={i}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.05, duration: 0.2 }}
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-xs text-primary hover:underline underline-offset-2 py-0.5"
+                >
+                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{r.title}</span>
+                </motion.a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Search done */}
+        {searchState.status === "done" && (
+          <div className="text-sm">
+            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
+              <Search className="h-3.5 w-3.5 text-green-500" />
+              <span>Ditemukan {searchState.results.length} sumber untuk: <strong className="text-foreground">{searchState.query}</strong></span>
+            </div>
+            <div className="space-y-1 pl-0.5">
+              {searchState.results.map((r, i) => (
+                <a
+                  key={i}
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-xs text-primary hover:underline underline-offset-2 py-0.5"
+                >
+                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{r.title}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+/* ───────────── Sources Footer ───────────── */
+
+function SourcesFooter({ sources }) {
+  if (!sources || sources.length === 0) return null;
+  return (
+    <div className="mt-2 pt-2 border-t border-border/50">
+      <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+        <Globe className="h-3 w-3" /> Sumber:
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {sources.map((s, i) => (
+          <a
+            key={i}
+            href={s.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-md text-primary hover:bg-muted/80 transition-colors"
+          >
+            <ExternalLink className="h-3 w-3" />
+            <span className="truncate max-w-[200px]">{s.title}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ───────────── Main Component ───────────── */
 
 export default function AdminAiChat() {
@@ -486,6 +596,10 @@ export default function AdminAiChat() {
   const [historyOpen, setHistoryOpen] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
 
+  // Search state
+  const [searchState, setSearchState] = useState({ status: "idle", query: "", results: [], done: false });
+  const [lastSources, setLastSources] = useState([]);
+
   // Reveal system
   const fullContentRef = useRef("");
   const revealedLenRef = useRef(0);
@@ -496,7 +610,7 @@ export default function AdminAiChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => { scrollToBottom(); }, [messages]);
+  useEffect(() => { scrollToBottom(); }, [messages, searchState]);
 
   const stopReveal = useCallback(() => {
     if (revealIntervalRef.current) {
@@ -651,6 +765,8 @@ export default function AdminAiChat() {
     fullContentRef.current = "";
     revealedLenRef.current = 0;
     streamDoneRef.current = false;
+    setSearchState({ status: "idle", query: "", results: [], done: false });
+    setLastSources([]);
     startReveal(assistantIdx);
 
     // Create or reuse conversation
@@ -704,9 +820,33 @@ export default function AdminAiChat() {
         const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
         for (const line of lines) {
           const data = line.replace("data: ", "");
-          if (data === "[DONE]") break;
+          if (data === "[DONE]") continue;
           try {
             const parsed = JSON.parse(data);
+
+            // Search events from edge function
+            if (parsed.search) {
+              setSearchState({ status: "searching", query: parsed.query, results: [], done: false });
+              continue;
+            }
+            if (parsed.searchResult) {
+              setSearchState((prev) => ({
+                ...prev,
+                status: "results",
+                results: [...prev.results, parsed.searchResult],
+              }));
+              continue;
+            }
+            if (parsed.searchDone) {
+              setSearchState((prev) => ({ ...prev, status: "done", done: true }));
+              continue;
+            }
+            if (parsed.sources) {
+              setLastSources(parsed.sources);
+              continue;
+            }
+
+            // Normal text delta
             const delta =
               parsed.choices?.[0]?.delta?.content ||
               parsed.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -892,6 +1032,23 @@ export default function AdminAiChat() {
                   </motion.div>
                 ))}
               </AnimatePresence>
+
+              {/* Search indicator - shown while searching */}
+              {searchState.status !== "idle" && (
+                <SearchIndicator searchState={searchState} />
+              )}
+
+              {/* Sources footer - shown after response with web search */}
+              {!isBusy && lastSources.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="pl-10"
+                >
+                  <SourcesFooter sources={lastSources} />
+                </motion.div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
           </div>
