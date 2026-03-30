@@ -189,19 +189,58 @@ function renderInline(text) {
   return parts;
 }
 
-function AssistantMessage({ content }) {
+function FadeInBlock({ children, delay }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: "easeOut", delay }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function AssistantMessage({ content, isStreaming }) {
   const rendered = useMemo(() => renderMarkdown(content), [content]);
+  const prevCountRef = useRef(0);
+
+  const count = rendered ? rendered.length : 0;
+
+  // Track which elements are "new" so only they get a fade delay
+  const stableCount = useRef(0);
+  useEffect(() => {
+    if (!isStreaming) {
+      stableCount.current = count;
+    }
+  }, [isStreaming, count]);
+
+  // After streaming ends, lock the count so nothing re-animates
+  useEffect(() => {
+    if (!isStreaming) {
+      prevCountRef.current = count;
+    }
+  }, [isStreaming, count]);
+
   return (
     <div className="flex gap-3 w-full">
       <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mt-0.5">
         <Bot className="h-3.5 w-3.5 text-white" />
       </div>
       <div className="flex-1 min-w-0 text-sm leading-relaxed text-foreground">
-        {rendered || (
+        {!content ? (
           <span className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             Mengetik...
           </span>
+        ) : (
+          <AnimatePresence initial={false}>
+            {rendered.map((el, i) => (
+              <FadeInBlock key={i} delay={isStreaming && i >= prevCountRef.current ? 0.05 : 0}>
+                {el}
+              </FadeInBlock>
+            ))}
+          </AnimatePresence>
         )}
       </div>
     </div>
@@ -396,7 +435,10 @@ export default function AdminAiChat() {
                   transition={{ duration: 0.15 }}
                 >
                   {msg.role === "assistant" ? (
-                    <AssistantMessage content={msg.content} />
+                    <AssistantMessage
+                      content={msg.content}
+                      isStreaming={isLoading && i === messages.length - 1}
+                    />
                   ) : (
                     <UserMessage content={msg.content} />
                   )}
