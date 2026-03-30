@@ -288,6 +288,7 @@ async function handleCustomAI(
       headers: {
         "Content-Type": "application/json",
         "bypass-tunnel-reminder": "true",
+        "ngrok-skip-browser-warning": "true",
         ...(CUSTOM_AI_KEY ? { Authorization: `Bearer ${CUSTOM_AI_KEY}` } : {}),
       },
       body: JSON.stringify({
