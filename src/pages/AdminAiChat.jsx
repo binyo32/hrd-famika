@@ -23,7 +23,27 @@ import { motion, AnimatePresence } from "framer-motion";
 const SUPA_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 const GREETING = "Halo! Saya AI Assistant HRD Famika. Ada yang bisa saya bantu?";
 
-/* ───────────── Markdown Renderer ───────────── */
+/* ───────────── Markdown Renderer (Full) ───────────── */
+
+function isTableSeparator(line) {
+  return /^\|?[\s\-:]+(\|[\s\-:]+)+\|?\s*$/.test(line);
+}
+
+function isTableRow(line) {
+  return line.trim().startsWith("|") && line.trim().endsWith("|");
+}
+
+function parseTableCells(line) {
+  return line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+}
+
+function parseTableAlign(line) {
+  return parseTableCells(line).map((c) => {
+    if (c.startsWith(":") && c.endsWith(":")) return "center";
+    if (c.endsWith(":")) return "right";
+    return "left";
+  });
+}
 
 function renderMarkdown(text) {
   if (!text) return null;
@@ -34,80 +54,246 @@ function renderMarkdown(text) {
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith("### ")) {
-      elements.push(<h3 key={i} className="text-base font-bold mt-3 mb-1">{renderInline(line.slice(4))}</h3>);
+    // ── Heading ──
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = headingMatch[2];
+      const cls = [
+        "", "text-xl font-bold mt-4 mb-1.5",
+        "text-lg font-bold mt-3 mb-1",
+        "text-base font-bold mt-3 mb-1",
+        "text-sm font-bold mt-2 mb-1 uppercase tracking-wide text-muted-foreground",
+      ][level];
+      const Tag = `h${level}`;
+      elements.push(<Tag key={i} className={cls}>{renderInline(content)}</Tag>);
       i++; continue;
     }
-    if (line.startsWith("## ")) {
-      elements.push(<h2 key={i} className="text-lg font-bold mt-3 mb-1">{renderInline(line.slice(3))}</h2>);
-      i++; continue;
-    }
-    if (line.startsWith("# ")) {
-      elements.push(<h1 key={i} className="text-xl font-bold mt-3 mb-1">{renderInline(line.slice(2))}</h1>);
-      i++; continue;
-    }
+
+    // ── Code block ──
     if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
       const codeLines = [];
       i++;
       while (i < lines.length && !lines[i].startsWith("```")) { codeLines.push(lines[i]); i++; }
       i++;
       elements.push(
-        <pre key={`code-${i}`} className="bg-zinc-900 text-zinc-100 rounded-lg p-3 my-2 overflow-x-auto text-sm font-mono">
-          <code>{codeLines.join("\n")}</code>
-        </pre>
+        <div key={`code-${i}`} className="my-2 rounded-lg overflow-hidden border border-border">
+          {lang && (
+            <div className="bg-zinc-800 text-zinc-400 text-xs px-3 py-1 font-mono">{lang}</div>
+          )}
+          <pre className="bg-zinc-900 text-zinc-100 p-3 overflow-x-auto text-sm font-mono">
+            <code>{codeLines.join("\n")}</code>
+          </pre>
+        </div>
       );
       continue;
     }
-    if (/^[\*\-]\s/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^[\*\-]\s/.test(lines[i])) { items.push(lines[i].replace(/^[\*\-]\s/, "")); i++; }
+
+    // ── Table ──
+    if (isTableRow(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const headers = parseTableCells(line);
+      const aligns = parseTableAlign(lines[i + 1]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && isTableRow(lines[i])) {
+        rows.push(parseTableCells(lines[i]));
+        i++;
+      }
       elements.push(
-        <ul key={`ul-${i}`} className="list-disc list-inside space-y-1 my-1.5">
-          {items.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        <div key={`tbl-${i}`} className="my-2 overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-muted/50">
+                {headers.map((h, j) => (
+                  <th key={j} className="px-3 py-2 font-semibold text-left border-b border-border" style={{ textAlign: aligns[j] || "left" }}>
+                    {renderInline(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 0 ? "" : "bg-muted/20"}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="px-3 py-1.5 border-b border-border/50" style={{ textAlign: aligns[ci] || "left" }}>
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    // ── Blockquote ──
+    if (line.startsWith(">")) {
+      const quoteLines = [];
+      while (i < lines.length && lines[i].startsWith(">")) {
+        quoteLines.push(lines[i].replace(/^>\s?/, ""));
+        i++;
+      }
+      elements.push(
+        <blockquote key={`bq-${i}`} className="border-l-4 border-primary/40 pl-4 py-1 my-2 text-muted-foreground italic">
+          {quoteLines.map((ql, j) => <p key={j} className="my-0.5">{renderInline(ql)}</p>)}
+        </blockquote>
+      );
+      continue;
+    }
+
+    // ── Horizontal rule ──
+    if (/^[-*_]{3,}\s*$/.test(line.trim())) {
+      elements.push(<hr key={i} className="my-3 border-border" />);
+      i++; continue;
+    }
+
+    // ── Checkbox list ──
+    if (/^[\*\-]\s\[[ xX]\]\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[\*\-]\s\[[ xX]\]\s/.test(lines[i])) {
+        const checked = /\[[xX]\]/.test(lines[i]);
+        const content = lines[i].replace(/^[\*\-]\s\[[ xX]\]\s/, "");
+        items.push({ checked, content });
+        i++;
+      }
+      elements.push(
+        <ul key={`cb-${i}`} className="space-y-1 my-1.5">
+          {items.map((item, j) => (
+            <li key={j} className="flex items-start gap-2">
+              <span className={`mt-0.5 flex-shrink-0 h-4 w-4 rounded border flex items-center justify-center text-xs ${item.checked ? "bg-primary text-primary-foreground border-primary" : "border-muted-foreground/40"}`}>
+                {item.checked && "✓"}
+              </span>
+              <span className={item.checked ? "line-through text-muted-foreground" : ""}>{renderInline(item.content)}</span>
+            </li>
+          ))}
         </ul>
       );
       continue;
     }
+
+    // ── Unordered list (with nested indent support) ──
+    if (/^[\*\-]\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[\*\-]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^[\*\-]\s/, ""));
+        i++;
+      }
+      elements.push(
+        <ul key={`ul-${i}`} className="list-disc list-inside space-y-1 my-1.5 marker:text-primary/60">
+          {items.map((item, j) => <li key={j} className="leading-relaxed">{renderInline(item)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+
+    // ── Ordered list ──
     if (/^\d+[\.\)]\s/.test(line)) {
       const items = [];
-      while (i < lines.length && /^\d+[\.\)]\s/.test(lines[i])) { items.push(lines[i].replace(/^\d+[\.\)]\s/, "")); i++; }
+      while (i < lines.length && /^\d+[\.\)]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+[\.\)]\s/, ""));
+        i++;
+      }
       elements.push(
-        <ol key={`ol-${i}`} className="list-decimal list-inside space-y-1 my-1.5">
-          {items.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        <ol key={`ol-${i}`} className="list-decimal list-inside space-y-1 my-1.5 marker:text-primary/60 marker:font-semibold">
+          {items.map((item, j) => <li key={j} className="leading-relaxed">{renderInline(item)}</li>)}
         </ol>
       );
       continue;
     }
+
+    // ── Empty line ──
     if (line.trim() === "") { elements.push(<div key={i} className="h-2" />); i++; continue; }
-    elements.push(<p key={i} className="my-0.5">{renderInline(line)}</p>);
+
+    // ── Normal paragraph ──
+    elements.push(<p key={i} className="my-0.5 leading-relaxed">{renderInline(line)}</p>);
     i++;
   }
   return elements;
 }
 
+/* ── Inline renderer: bold, italic, bold-italic, strikethrough, code, links ── */
+
 function renderInline(text) {
+  if (!text) return null;
   const parts = [];
   let remaining = text;
   let key = 0;
-  while (remaining.length > 0) {
-    const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
-    const codeMatch = remaining.match(/`([^`]+)`/);
-    const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
-    const matches = [
-      boldMatch && { type: "bold", match: boldMatch },
-      codeMatch && { type: "code", match: codeMatch },
-      italicMatch && { type: "italic", match: italicMatch },
-    ].filter(Boolean).sort((a, b) => a.match.index - b.match.index);
 
-    if (matches.length === 0) { parts.push(<span key={key++}>{remaining}</span>); break; }
-    const first = matches[0];
-    const idx = first.match.index;
+  while (remaining.length > 0) {
+    // Find the earliest match of any inline pattern
+    const patterns = [
+      { type: "bolditalic", regex: /\*\*\*(.+?)\*\*\*/ },
+      { type: "bold", regex: /\*\*(.+?)\*\*/ },
+      { type: "italic", regex: /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/ },
+      { type: "strikethrough", regex: /~~(.+?)~~/ },
+      { type: "code", regex: /`([^`]+)`/ },
+      { type: "link", regex: /\[([^\]]+)\]\(([^)]+)\)/ },
+      { type: "autolink", regex: /(https?:\/\/[^\s<>)\]]+)/ },
+    ];
+
+    let earliest = null;
+    for (const p of patterns) {
+      const m = remaining.match(p.regex);
+      if (m && (!earliest || m.index < earliest.match.index)) {
+        earliest = { type: p.type, match: m };
+      }
+    }
+
+    if (!earliest) {
+      parts.push(<span key={key++}>{remaining}</span>);
+      break;
+    }
+
+    const { type, match } = earliest;
+    const idx = match.index;
+
+    // Text before the match
     if (idx > 0) parts.push(<span key={key++}>{remaining.slice(0, idx)}</span>);
-    if (first.type === "bold") parts.push(<strong key={key++} className="font-semibold">{first.match[1]}</strong>);
-    else if (first.type === "code") parts.push(<code key={key++} className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">{first.match[1]}</code>);
-    else if (first.type === "italic") parts.push(<em key={key++} className="italic">{first.match[1]}</em>);
-    remaining = remaining.slice(idx + first.match[0].length);
+
+    switch (type) {
+      case "bolditalic":
+        parts.push(<strong key={key++} className="font-bold italic">{renderInline(match[1])}</strong>);
+        break;
+      case "bold":
+        parts.push(<strong key={key++} className="font-semibold">{renderInline(match[1])}</strong>);
+        break;
+      case "italic":
+        parts.push(<em key={key++} className="italic">{renderInline(match[1])}</em>);
+        break;
+      case "strikethrough":
+        parts.push(<del key={key++} className="line-through text-muted-foreground">{renderInline(match[1])}</del>);
+        break;
+      case "code":
+        parts.push(
+          <code key={key++} className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-primary/90">
+            {match[1]}
+          </code>
+        );
+        break;
+      case "link":
+        parts.push(
+          <a key={key++} href={match[2]} target="_blank" rel="noopener noreferrer"
+            className="text-primary underline underline-offset-2 hover:text-primary/80 transition-colors">
+            {match[1]}
+          </a>
+        );
+        break;
+      case "autolink":
+        parts.push(
+          <a key={key++} href={match[1]} target="_blank" rel="noopener noreferrer"
+            className="text-primary underline underline-offset-2 hover:text-primary/80 transition-colors break-all">
+            {match[1]}
+          </a>
+        );
+        break;
+    }
+
+    remaining = remaining.slice(idx + match[0].length);
   }
+
   return parts;
 }
 
