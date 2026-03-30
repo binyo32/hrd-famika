@@ -12,6 +12,9 @@ import {
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronDown,
+  Sparkles,
+  Cpu,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -247,6 +250,15 @@ export default function AdminAiChat() {
   const [animatingIdx, setAnimatingIdx] = useState(-1);
   const messagesEndRef = useRef(null);
 
+  // Model selector
+  const [availableModels, setAvailableModels] = useState([
+    { id: "gemini", name: "Gemini 2.5 Flash", available: true },
+  ]);
+  const [selectedModel, setSelectedModel] = useState(
+    () => localStorage.getItem("ai-chat-model") || "gemini"
+  );
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+
   // History state
   const [conversations, setConversations] = useState([]);
   const [activeConvId, setActiveConvId] = useState(null);
@@ -309,6 +321,21 @@ export default function AdminAiChat() {
   }, [user]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // Fetch available models from edge function
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(SUPA_FUNCTIONS_URL, {
+          headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.models?.length) setAvailableModels(data.models);
+        }
+      } catch {}
+    })();
+  }, []);
 
   /* ───────── Supabase: Load messages for a conversation ───────── */
 
@@ -440,6 +467,7 @@ export default function AdminAiChat() {
         },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+          model: selectedModel,
         }),
       });
 
@@ -533,6 +561,74 @@ export default function AdminAiChat() {
                 </p>
               </div>
             </div>
+
+            {/* Model Selector */}
+            <div className="relative">
+              <button
+                onClick={() => setModelMenuOpen(!modelMenuOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted transition-colors text-sm"
+                disabled={isBusy}
+              >
+                {selectedModel === "gemini" ? (
+                  <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+                ) : (
+                  <Cpu className="h-3.5 w-3.5 text-emerald-500" />
+                )}
+                <span className="hidden sm:inline">
+                  {availableModels.find((m) => m.id === selectedModel)?.name || "Gemini"}
+                </span>
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </button>
+              <AnimatePresence>
+                {modelMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setModelMenuOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 top-full mt-1 z-50 min-w-[200px] rounded-lg border border-border bg-card shadow-lg p-1"
+                    >
+                      {availableModels.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            setSelectedModel(m.id);
+                            localStorage.setItem("ai-chat-model", m.id);
+                            setModelMenuOpen(false);
+                          }}
+                          disabled={!m.available}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                            selectedModel === m.id
+                              ? "bg-primary/10 text-primary font-medium"
+                              : m.available
+                                ? "hover:bg-muted"
+                                : "opacity-40 cursor-not-allowed"
+                          }`}
+                        >
+                          {m.id === "gemini" ? (
+                            <Sparkles className="h-4 w-4 text-blue-500" />
+                          ) : (
+                            <Cpu className="h-4 w-4 text-emerald-500" />
+                          )}
+                          <div className="flex-1 text-left">
+                            <div>{m.name}</div>
+                            {!m.available && (
+                              <div className="text-xs text-muted-foreground">Tidak tersedia</div>
+                            )}
+                          </div>
+                          {selectedModel === m.id && (
+                            <div className="h-2 w-2 rounded-full bg-primary" />
+                          )}
+                        </button>
+                      ))}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
             <Button
               variant="ghost"
               size="sm"
