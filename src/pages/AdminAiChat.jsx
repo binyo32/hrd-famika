@@ -300,7 +300,7 @@ function renderInline(text) {
 /* ───────────── Message Components ───────────── */
 
 function AssistantMessage({ content, isAnimating }) {
-  const rendered = useMemo(() => renderMarkdown(content), [content]);
+  const rendered = useMemo(() => renderMarkdown(content?.replace(/^\n+/, "")), [content]);
   const prevBlockCountRef = useRef(0);
   const blockCount = rendered ? rendered.length : 0;
 
@@ -310,8 +310,15 @@ function AssistantMessage({ content, isAnimating }) {
   }, [blockCount]);
 
   // Split first block and rest so icon sits next to first line
-  const firstBlock = rendered ? rendered[0] : null;
-  const restBlocks = rendered ? rendered.slice(1) : [];
+  // Skip leading empty spacer divs to find real first content block
+  let firstIdx = 0;
+  if (rendered) {
+    while (firstIdx < rendered.length && rendered[firstIdx]?.props?.className === "h-2") {
+      firstIdx++;
+    }
+  }
+  const firstBlock = rendered ? rendered[firstIdx] || rendered[0] : null;
+  const restBlocks = rendered ? rendered.slice(firstIdx + 1) : [];
 
   return (
     <div className="w-full text-sm leading-relaxed text-foreground">
