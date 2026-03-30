@@ -732,6 +732,15 @@ export default function AdminAiChat() {
     }
   };
 
+  // Context limit detection (~4 chars per token estimate)
+  const CONTEXT_LIMIT = selectedModel === "custom" ? 32768 : 100000;
+  const WARN_THRESHOLD = 0.85;
+  const totalChars = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
+  const estimatedTokens = Math.round(totalChars / 4);
+  const contextUsage = estimatedTokens / CONTEXT_LIMIT;
+  const isContextFull = contextUsage >= 0.95;
+  const isContextWarning = contextUsage >= WARN_THRESHOLD && !isContextFull;
+
   return (
     <Layout>
       <div className="flex h-[calc(100vh-5rem)] -m-4 sm:-m-6 md:-m-8">
@@ -880,6 +889,33 @@ export default function AdminAiChat() {
             </div>
           </div>
 
+          {/* Context limit banner */}
+          <AnimatePresence>
+            {(isContextFull || isContextWarning) && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className={`px-4 py-3 border-t ${isContextFull ? "bg-destructive/10 border-destructive/30" : "bg-yellow-500/10 border-yellow-500/30"}`}
+              >
+                <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+                  <p className={`text-sm ${isContextFull ? "text-destructive" : "text-yellow-600 dark:text-yellow-400"}`}>
+                    {isContextFull
+                      ? "Context penuh. Percakapan ini sudah mencapai batas maksimal. Silakan mulai chat baru."
+                      : `Context hampir penuh (${Math.round(contextUsage * 100)}%). Pertimbangkan untuk memulai chat baru.`}
+                  </p>
+                  <Button
+                    onClick={handleNewChat}
+                    size="sm"
+                    className="flex-shrink-0 gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Chat Baru
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Input */}
           <div className="border-t border-border bg-card/50 backdrop-blur-sm px-4 py-3">
             <div className="max-w-3xl mx-auto flex gap-2">
@@ -887,14 +923,14 @@ export default function AdminAiChat() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ketik pesan... (Enter untuk kirim, Shift+Enter untuk baris baru)"
+                placeholder={isContextFull ? "Context penuh — klik Chat Baru untuk melanjutkan" : "Ketik pesan... (Enter untuk kirim, Shift+Enter untuk baris baru)"}
                 className="resize-none min-h-[44px] max-h-[120px]"
                 rows={1}
-                disabled={isBusy}
+                disabled={isBusy || isContextFull}
               />
               <Button
                 onClick={handleSend}
-                disabled={!input.trim() || isBusy}
+                disabled={!input.trim() || isBusy || isContextFull}
                 size="icon"
                 className="h-[44px] w-[44px] flex-shrink-0 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
               >
