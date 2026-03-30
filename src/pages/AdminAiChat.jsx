@@ -542,6 +542,7 @@ export default function AdminAiChat() {
   const [isBusy, setIsBusy] = useState(false);
   const [animatingIdx, setAnimatingIdx] = useState(-1);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Model selector
   const [availableModels, setAvailableModels] = useState([
@@ -573,6 +574,13 @@ export default function AdminAiChat() {
   };
 
   useEffect(() => { scrollToBottom(); }, [messages, searchState]);
+
+  // Auto-focus input after AI finishes responding
+  useEffect(() => {
+    if (!isBusy) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isBusy]);
 
   const stopReveal = useCallback(() => {
     if (revealIntervalRef.current) {
@@ -1035,6 +1043,7 @@ export default function AdminAiChat() {
           <div className="border-t border-border bg-card/50 backdrop-blur-sm px-4 py-3">
             <div className="max-w-3xl mx-auto flex gap-2">
               <Textarea
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
