@@ -21,6 +21,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const GEMINI_API_KEY  = Deno.env.get("GEMINI_API_KEY");
 const TAVILY_API_KEY  = Deno.env.get("TAVILY_API_KEY") ?? "";
+const SEARXNG_URL     = Deno.env.get("SEARXNG_URL") ?? "";
 const CUSTOM_AI_URL   = Deno.env.get("CUSTOM_AI_URL") ?? "";
 const CUSTOM_AI_KEY   = Deno.env.get("CUSTOM_AI_KEY") ?? "";
 const CUSTOM_AI_MODEL = Deno.env.get("CUSTOM_AI_MODEL") ?? "";
@@ -145,35 +146,71 @@ PENTING:
 }
 
 async function searchWeb(query: string, writer: any, encoder: TextEncoder) {
-  if (!TAVILY_API_KEY) return { context: "", sources: [] };
+  // Try SearXNG (local) first, fallback to Tavily (cloud)
+  if (!SEARXNG_URL && !TAVILY_API_KEY) return { context: "", sources: [] };
+
   try {
     if (writer && encoder) {
       await writer.write(encoder.encode(`data: ${JSON.stringify({ search: true, query })}\n\n`));
     }
-    const response = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: TAVILY_API_KEY, query, search_depth: "basic",
-        max_results: 5, include_answer: true, include_raw_content: false,
-      }),
-    });
-    if (!response.ok) return { context: "", sources: [] };
-    const data = await response.json();
+
     let context = "";
     const sources: any[] = [];
-    if (data.answer) context += `Ringkasan hasil pencarian web: ${data.answer}\n\n`;
-    if (data.results?.length > 0) {
-      context += "Detail dari sumber web:\n";
-      for (const result of data.results.slice(0, 5)) {
-        context += `- ${result.title}: ${result.content?.substring(0, 300) ?? ""}\n`;
-        const source = { title: result.title, url: result.url };
-        sources.push(source);
-        if (writer && encoder) {
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ searchResult: source })}\n\n`));
+
+    if (SEARXNG_URL) {
+      // ── SearXNG (local, free, unlimited) ──
+      const searxUrl = SEARXNG_URL.replace(/\/$/, "");
+      const params = new URLSearchParams({ q: query, format: "json", language: "id" });
+      const response = await fetch(`${searxUrl}/search?${params}`, {
+        headers: {
+          "bypass-tunnel-reminder": "true",
+          "ngrok-skip-browser-warning": "true",
+          "X-Forwarded-For": "127.0.0.1",
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.results?.length > 0) {
+          context += "Detail dari sumber web:\n";
+          for (const result of data.results.slice(0, 5)) {
+            context += `- ${result.title}: ${(result.content ?? "").substring(0, 300)}\n`;
+            const source = { title: result.title, url: result.url };
+            sources.push(source);
+            if (writer && encoder) {
+              await writer.write(encoder.encode(`data: ${JSON.stringify({ searchResult: source })}\n\n`));
+            }
+          }
+        }
+      } else {
+        console.error("SearXNG error:", response.status);
+      }
+    } else if (TAVILY_API_KEY) {
+      // ── Tavily (cloud, fallback) ──
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: TAVILY_API_KEY, query, search_depth: "basic",
+          max_results: 5, include_answer: true, include_raw_content: false,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.answer) context += `Ringkasan hasil pencarian web: ${data.answer}\n\n`;
+        if (data.results?.length > 0) {
+          context += "Detail dari sumber web:\n";
+          for (const result of data.results.slice(0, 5)) {
+            context += `- ${result.title}: ${(result.content ?? "").substring(0, 300)}\n`;
+            const source = { title: result.title, url: result.url };
+            sources.push(source);
+            if (writer && encoder) {
+              await writer.write(encoder.encode(`data: ${JSON.stringify({ searchResult: source })}\n\n`));
+            }
+          }
         }
       }
     }
+
     if (writer && encoder) {
       await writer.write(encoder.encode(`data: ${JSON.stringify({ searchDone: true })}\n\n`));
     }
@@ -254,7 +291,7 @@ async function handleCustomAI(
     // 1) Optional web search (uses Gemini for query generation + Tavily)
     let searchResult = { context: "", sources: [] as any[] };
     let didSearch = false;
-    if (shouldSearch && TAVILY_API_KEY && GEMINI_API_KEY) {
+    if (shouldSearch && (SEARXNG_URL || TAVILY_API_KEY)) {
       console.log("Web search for custom AI:", lastUserText);
       const searchQuery = await generateSearchQuery(lastUserText, processedMessages);
       searchResult = await searchWeb(searchQuery, writer, encoder);
@@ -606,7 +643,7 @@ serve(async (req) => {
     const needsImageOutput = isImageGenRequest || isImageEditRequest;
 
     // Search detection
-    const shouldSearch = !!(lastUserMsg && TAVILY_API_KEY && !needsImageOutput && needsWebSearch(lastUserText));
+    const shouldSearch = !!(lastUserMsg && (SEARXNG_URL || TAVILY_API_KEY) && !needsImageOutput && needsWebSearch(lastUserText));
 
     // Build processed messages
     let processedMessages = messages.filter((m: any) => m.role !== "system");
