@@ -172,7 +172,7 @@ async function searchWeb(query: string, writer: any, encoder: TextEncoder) {
         const data = await response.json();
         if (data.results?.length > 0) {
           context += "Detail dari sumber web:\n";
-          for (const result of data.results.slice(0, 5)) {
+          for (const result of data.results.slice(0, 10)) {
             context += `- ${result.title}: ${(result.content ?? "").substring(0, 300)}\n`;
             const source = { title: result.title, url: result.url };
             sources.push(source);
@@ -191,7 +191,7 @@ async function searchWeb(query: string, writer: any, encoder: TextEncoder) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           api_key: TAVILY_API_KEY, query, search_depth: "basic",
-          max_results: 5, include_answer: true, include_raw_content: false,
+          max_results: 10, include_answer: true, include_raw_content: false,
         }),
       });
       if (response.ok) {
@@ -199,7 +199,7 @@ async function searchWeb(query: string, writer: any, encoder: TextEncoder) {
         if (data.answer) context += `Ringkasan hasil pencarian web: ${data.answer}\n\n`;
         if (data.results?.length > 0) {
           context += "Detail dari sumber web:\n";
-          for (const result of data.results.slice(0, 5)) {
+          for (const result of data.results.slice(0, 10)) {
             context += `- ${result.title}: ${(result.content ?? "").substring(0, 300)}\n`;
             const source = { title: result.title, url: result.url };
             sources.push(source);
