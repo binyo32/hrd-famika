@@ -309,32 +309,60 @@ function AssistantMessage({ content, isAnimating }) {
     return () => clearTimeout(t);
   }, [blockCount]);
 
+  // Split first block and rest so icon sits next to first line
+  const firstBlock = rendered ? rendered[0] : null;
+  const restBlocks = rendered ? rendered.slice(1) : [];
+
   return (
-    <div className="flex gap-3 w-full">
-      <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mt-0.5">
-        <Bot className="h-3.5 w-3.5 text-white" />
-      </div>
-      <div className="flex-1 min-w-0 text-sm leading-relaxed text-foreground">
-        {!content ? (
+    <div className="w-full text-sm leading-relaxed text-foreground">
+      {!content ? (
+        <div className="flex items-center gap-3">
+          <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+            <Bot className="h-3.5 w-3.5 text-white" />
+          </div>
           <span className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" /> Mengetik...
           </span>
-        ) : (
-          rendered.map((el, i) => {
-            const isNew = isAnimating && i >= prevBlockCountRef.current;
-            return (
+        </div>
+      ) : (
+        <>
+          {/* First block: icon + content side by side */}
+          <div className="flex gap-3 items-start">
+            <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mt-0.5">
+              <Bot className="h-3.5 w-3.5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0 pt-0.5">
               <motion.div
-                key={`b-${i}`}
-                initial={isNew ? { opacity: 0, x: -12 } : false}
+                key="b-0"
+                initial={isAnimating && 0 >= prevBlockCountRef.current ? { opacity: 0, x: -12 } : false}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.35, ease: "easeOut" }}
               >
-                {el}
+                {firstBlock}
               </motion.div>
-            );
-          })
-        )}
-      </div>
+            </div>
+          </div>
+          {/* Rest of blocks: full width, indented to match */}
+          {restBlocks.length > 0 && (
+            <div className="pl-10">
+              {restBlocks.map((el, i) => {
+                const idx = i + 1;
+                const isNew = isAnimating && idx >= prevBlockCountRef.current;
+                return (
+                  <motion.div
+                    key={`b-${idx}`}
+                    initial={isNew ? { opacity: 0, x: -12 } : false}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.35, ease: "easeOut" }}
+                  >
+                    {el}
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
