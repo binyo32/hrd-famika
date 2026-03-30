@@ -280,20 +280,25 @@ async function handleCustomAI(
 
     // 3) Call Custom AI (OpenAI-compatible endpoint)
     const apiUrl = CUSTOM_AI_URL.replace(/\/$/, "");
+    const abortCtrl = new AbortController();
+    const fetchTimeout = setTimeout(() => abortCtrl.abort(), 180_000); // 3 min timeout
     const response = await fetch(`${apiUrl}/v1/chat/completions`, {
       method: "POST",
+      signal: abortCtrl.signal,
       headers: {
         "Content-Type": "application/json",
+        "bypass-tunnel-reminder": "true",
         ...(CUSTOM_AI_KEY ? { Authorization: `Bearer ${CUSTOM_AI_KEY}` } : {}),
       },
       body: JSON.stringify({
         model: CUSTOM_AI_MODEL || "default",
         messages: openaiMessages,
         stream: true,
-        max_tokens: 4096,
+        max_tokens: 8192,
         temperature: 0.7,
       }),
     });
+    clearTimeout(fetchTimeout);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -316,6 +321,8 @@ async function handleCustomAI(
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let hasContent = false;
+    let hasReasoning = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -334,13 +341,28 @@ async function handleCustomAI(
 
         try {
           const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
+          const delta = parsed.choices?.[0]?.delta;
+          // Handle reasoning_content (thinking/CoT models like Qwen)
+          // Skip reasoning tokens, only send actual content to user
+          const content = delta?.content;
           if (content) {
             const chunk = { choices: [{ delta: { content } }] };
             await writer.write(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            hasContent = true;
+          }
+          // Track if we're getting reasoning but no content yet
+          if (delta?.reasoning_content && !content) {
+            hasReasoning = true;
           }
         } catch {}
       }
+    }
+
+    // If model only produced reasoning_content with no actual content,
+    // send a fallback message
+    if (hasReasoning && !hasContent) {
+      const fallback = { choices: [{ delta: { content: "Maaf, model sedang berpikir terlalu lama. Coba lagi dengan pertanyaan yang lebih singkat." } }] };
+      await writer.write(encoder.encode(`data: ${JSON.stringify(fallback)}\n\n`));
     }
 
     // 5) Done + sources
