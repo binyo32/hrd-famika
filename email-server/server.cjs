@@ -187,9 +187,26 @@ function imapConnect(server, port, email, password) {
           conn.write(`${t} ${c}\r\n`);
           setTimeout(() => { if (dataHandler) { dataHandler = null; res(buf); } }, 45000);
         });
+        // IMAP APPEND: 2-step (send cmd → wait "+" → send literal data → wait OK)
+        const append = (folder, flags, message) => new Promise((res) => {
+          tag++; const t = `A${tag}`;
+          const msgBuf = Buffer.from(message, "utf-8");
+          let phase = 0, buf = "";
+          dataHandler = (ch) => {
+            buf += ch;
+            if (phase === 0 && buf.includes("+")) {
+              phase = 1; buf = "";
+              conn.write(msgBuf); conn.write(Buffer.from("\r\n"));
+            } else if (phase === 1 && buf.match(new RegExp(`^${t} (OK|NO|BAD)`, "m"))) {
+              dataHandler = null; res(buf);
+            }
+          };
+          conn.write(`${t} APPEND "${folder}" (${flags}) {${msgBuf.length}}\r\n`);
+          setTimeout(() => { if (dataHandler) { dataHandler = null; res(buf); } }, 15000);
+        });
         cmd(`LOGIN ${email} ${password}`).then((r) => {
           if (r.match(/^A\d+ (NO|BAD)/m)) { conn.destroy(); reject(new Error("Login failed")); }
-          else resolve({ cmd, close: () => conn.destroy() });
+          else resolve({ cmd, append, close: () => conn.destroy() });
         });
       };
     });
@@ -306,7 +323,14 @@ async function handleAttachment(p) {
 }
 
 async function handleSend(p) {
-  return new Promise((resolve, reject) => {
+  // Build the full RFC822 message
+  const date = new Date().toUTCString();
+  let rawMsg = `From: ${p.email}\r\nTo: ${p.to}\r\n`;
+  if (p.cc) rawMsg += `Cc: ${p.cc}\r\n`;
+  rawMsg += `Subject: ${p.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\nMIME-Version: 1.0\r\nDate: ${date}\r\n\r\n${p.body}`;
+
+  // 1) Send via SMTP
+  await new Promise((resolve, reject) => {
     const conn = tls.connect(p.smtp_port, p.smtp_server, { rejectUnauthorized: false }, () => {
       const send = (c) => new Promise((res) => { conn.write(c + "\r\n"); conn.once("data", (d) => res(d.toString())); setTimeout(() => res(""), 5000); });
       (async () => {
@@ -321,16 +345,28 @@ async function handleSend(p) {
           if (p.cc) for (const addr of p.cc.split(",").map(s => s.trim()).filter(Boolean)) await send(`RCPT TO:<${addr}>`);
           if (p.bcc) for (const addr of p.bcc.split(",").map(s => s.trim()).filter(Boolean)) await send(`RCPT TO:<${addr}>`);
           await send("DATA");
-          let msg = `From: ${p.email}\r\nTo: ${p.to}\r\n`;
-          if (p.cc) msg += `Cc: ${p.cc}\r\n`;
-          msg += `Subject: ${p.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\nMIME-Version: 1.0\r\nDate: ${new Date().toUTCString()}\r\n\r\n${p.body}\r\n.`;
-          const r = await send(msg); await send("QUIT"); conn.destroy();
-          resolve({ success: r.includes("250") });
+          const r = await send(rawMsg + "\r\n."); await send("QUIT"); conn.destroy();
+          if (!r.includes("250")) throw new Error("SMTP send failed");
+          resolve();
         } catch (e) { conn.destroy(); reject(e); }
       })();
     });
     conn.on("error", reject);
   });
+
+  // 2) Save copy to Sent folder via IMAP APPEND
+  try {
+    const imap = await imapConnect(p.imap_server || "mail.fajarmitra.co.id", p.imap_port || 993, p.email, p.password);
+    for (const sent of ["INBOX.Sent", "Sent"]) {
+      const r = await imap.append(sent, "\\Seen", rawMsg);
+      if (r.match(/^A\d+ OK/m)) break;
+    }
+    await imap.cmd("LOGOUT"); imap.close();
+  } catch (e) {
+    console.error("Failed to save to Sent:", e.message);
+  }
+
+  return { success: true };
 }
 
 async function handleSearch(p) {
