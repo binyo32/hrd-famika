@@ -251,10 +251,9 @@ function ComposeDialog({ onClose, onSend, sending, replyTo }) {
 
 /* ─── Email Viewer ─── */
 
-function EmailViewer({ raw, onBack, onReply }) {
-  const headers = parseHeaders(raw);
-  const { text, html } = parseEmailBody(raw);
-  const sender = parseSender(headers.from);
+function EmailViewer({ data, onBack, onReply }) {
+  const { text = "", html = "", subject = "", from: rawFrom = "", to = "", date = "" } = data || {};
+  const sender = parseSender(rawFrom);
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -285,7 +284,7 @@ function EmailViewer({ raw, onBack, onReply }) {
       <Card className="overflow-hidden">
         {/* Header */}
         <div className="p-5 space-y-4 border-b">
-          <h2 className="text-lg font-semibold">{decodeSubject(headers.subject)}</h2>
+          <h2 className="text-lg font-semibold">{subject || "(Tanpa Subjek)"}</h2>
           <div className="flex items-start gap-3">
             <div className={`h-10 w-10 rounded-full ${getColor(sender.name)} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
               {getInitial(sender.name)}
@@ -293,10 +292,10 @@ function EmailViewer({ raw, onBack, onReply }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
                 <p className="font-medium text-sm">{sender.name}</p>
-                <span className="text-xs text-muted-foreground">{formatDate(headers.date)}</span>
+                <span className="text-xs text-muted-foreground">{formatDate(date)}</span>
               </div>
               <p className="text-xs text-muted-foreground truncate">
-                {sender.email}{headers.to ? ` → ${headers.to}` : ""}
+                {sender.email}{to ? ` → ${to}` : ""}
               </p>
             </div>
           </div>
@@ -313,7 +312,7 @@ function EmailViewer({ raw, onBack, onReply }) {
 
         {/* Actions */}
         <div className="px-5 py-3 border-t flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => onReply({ email: sender.email, subject: decodeSubject(headers.subject) })} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => onReply({ email: sender.email, subject })} className="gap-1.5">
             <ArrowLeft className="h-3.5 w-3.5" /> Balas
           </Button>
         </div>
@@ -352,7 +351,7 @@ export default function AdminEmail() {
   const readEmail = async (msgNum) => {
     setReadingMsg(msgNum);
     const r = await api("read", { msgNum });
-    setReadData(r.raw);
+    setReadData(r.parsed);
     setReadingMsg(null);
   };
 
@@ -375,7 +374,7 @@ export default function AdminEmail() {
     return (
       <Layout>
         <div className="max-w-3xl mx-auto">
-          <EmailViewer raw={readData} onBack={() => setReadData(null)} onReply={handleReply} />
+          <EmailViewer data={readData} onBack={() => setReadData(null)} onReply={handleReply} />
         </div>
       </Layout>
     );
