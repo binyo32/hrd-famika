@@ -458,7 +458,15 @@ function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread,
 
         {/* Body */}
         <div className="p-5">
-          {html ? (
+          {data._loading ? (
+            <div className="space-y-3 animate-pulse">
+              <div className="h-3.5 bg-muted/60 rounded w-[90%]" />
+              <div className="h-3.5 bg-muted/60 rounded w-full" />
+              <div className="h-3.5 bg-muted/60 rounded w-[75%]" />
+              <div className="h-3.5 bg-muted/40 rounded w-[60%]" />
+              <div className="h-3.5 bg-muted/40 rounded w-[85%]" />
+            </div>
+          ) : html ? (
             <iframe ref={iframeRef} className="w-full border-0 min-h-[200px]" sandbox="allow-same-origin" title="email" />
           ) : (
             <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-foreground/80">{text || "(Tidak ada isi)"}</pre>
@@ -466,7 +474,7 @@ function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread,
         </div>
 
         {/* Attachments */}
-        {fileAttachments.length > 0 && (
+        {fileAttachments.length > 0 && !data._loading && (
           <div className="px-5 py-4 border-t bg-muted/10">
             <div className="flex items-center gap-2 mb-3">
               <Paperclip className="h-4 w-4 text-muted-foreground" />
@@ -733,6 +741,7 @@ export default function AdminEmail() {
 
   const loadInbox = useCallback(async (pg = 1, silent = false) => {
     if (!silent) setLoadingInbox(true);
+    // Don't clear inbox on folder switch - keep old data visible while loading
     setPage(pg);
     try {
       let r;
@@ -776,11 +785,23 @@ export default function AdminEmail() {
   }, [config, readData, api, showToast]);
 
   const readEmail = async (msg) => {
-    setReadingMsg(msg.uid || msg.num);
-    const r = await api("read", { uid: msg.uid, msgNum: msg.num, folder });
-    setReadData(r.parsed);
+    // Instantly show viewer with metadata from inbox list
     setReadMeta({ uid: msg.uid, folder });
-    setReadingMsg(null);
+    setReadData({
+      subject: decodeSubject(msg.subject),
+      from: msg.from || "",
+      to: "",
+      cc: "",
+      date: msg.date || "",
+      text: "",
+      html: "",
+      attachments: [],
+      _loading: true,
+    });
+    // Load full email in background
+    const r = await api("read", { uid: msg.uid, msgNum: msg.num, folder });
+    if (r.parsed) setReadData(r.parsed);
+    else setReadData((prev) => prev ? { ...prev, _loading: false, text: "(Gagal memuat email)" } : prev);
   };
 
   const downloadAttachment = async (index, filename, contentType) => {
@@ -1071,7 +1092,7 @@ export default function AdminEmail() {
                   </motion.div>
                 ) : (
                   <>
-                    <motion.div initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: 0.03 } } }}>
+                    <div>
                       {inbox.messages.map((msg, i) => {
                         const subject = decodeSubject(msg.subject);
                         const sender = parseSender(msg.from);
@@ -1080,9 +1101,8 @@ export default function AdminEmail() {
                         const isSelected = selectedUids.has(msg.uid);
 
                         return (
-                          <motion.div
+                          <div
                             key={msg.uid || msg.num || i}
-                            variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
                             className={`transition-all duration-300 ${isDeleting ? "opacity-0 -translate-x-12 max-h-0 overflow-hidden" : ""}`}
                           >
                             <div
@@ -1161,10 +1181,10 @@ export default function AdminEmail() {
                                 ) : null}
                               </div>
                             </div>
-                          </motion.div>
+                          </div>
                         );
                       })}
-                    </motion.div>
+                    </div>
 
                     {/* Pagination */}
                     {totalPages > 1 && (
