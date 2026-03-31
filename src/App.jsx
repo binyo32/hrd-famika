@@ -32,6 +32,7 @@ import EmployeeTeamPage from "@/pages/EmployeeTeamPage";
 import ForbiddenPage from "./pages/ForbiddenPage";
 import AdminMessages from "./pages/AdminMessages";
 import AdminAiChat from "./pages/AdminAiChat";
+import AdminEmail from "./pages/AdminEmail";
 
 function AppContent() {
   const { successModalProps, showSuccessModal, hideSuccessModal } =
@@ -144,6 +145,14 @@ function AppContent() {
             element={
               <ProtectedRoute requiredRoles={["Super Admin"]}>
                 <AdminAiChat />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/email"
+            element={
+              <ProtectedRoute requiredRoles={["Super Admin"]}>
+                <AdminEmail />
               </ProtectedRoute>
             }
           />

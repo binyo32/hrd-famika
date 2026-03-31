@@ -25,6 +25,7 @@ import {
   UserCog2,
   MessageSquarePlusIcon,
   Bot,
+  Mail,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { motion, AnimatePresence } from "framer-motion";
@@ -84,6 +85,7 @@ const getNavLinks = (user, activeRole) => {
       },
       { to: "/admin/settings", icon: Settings, text: "Pengaturan" },
       { to: "/admin/activity-log", icon: History, text: "Log Aktivitas" },
+      { to: "/admin/email", icon: Mail, text: "Email" },
       { to: "/admin/ai-chat", icon: Bot, text: "AI Assistant" },
     ];
   }
