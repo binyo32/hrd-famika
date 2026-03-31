@@ -79,6 +79,7 @@ function parseEmail(raw) {
     subject: decodeHeader(h.subject || ""),
     from: decodeHeader(h.from || ""),
     to: decodeHeader(h.to || ""),
+    cc: decodeHeader(h.cc || ""),
     date: h.date || "",
   };
 }
@@ -110,7 +111,7 @@ function imapConnect(server, port, email, password) {
   });
 }
 
-/* ─── Helper: parse FETCH blocks into message array ─── */
+/* ─── Helper: parse FETCH blocks ─── */
 
 function parseFetchBlocks(raw) {
   const msgs = [];
@@ -118,6 +119,7 @@ function parseFetchBlocks(raw) {
   for (let i = 1; i < blocks.length; i += 2) {
     const num = parseInt(blocks[i]), b = blocks[i + 1] || "";
     const uid = parseInt(b.match(/UID (\d+)/)?.[1] || "0");
+    const flags = b.match(/FLAGS \(([^)]*)\)/)?.[1] || "";
     const rawFrom = b.match(/From:\s*([\s\S]*?)(?=\r?\n[\w-]+:|\r?\n\))/i)?.[1]?.replace(/\r?\n\s+/g, " ").trim() || "";
     const rawSubject = b.match(/Subject:\s*([\s\S]*?)(?=\r?\n[\w-]+:|\r?\n\))/i)?.[1]?.replace(/\r?\n\s+/g, " ").trim() || "";
     const sender = parseSender(rawFrom);
@@ -127,7 +129,8 @@ function parseFetchBlocks(raw) {
       fromEmail: sender.email,
       subject: decodeHeader(rawSubject) || "(Tanpa Subjek)",
       date: b.match(/Date:\s*(.+)/i)?.[1]?.trim() || "",
-      seen: (b.match(/FLAGS \(([^)]*)\)/)?.[1] || "").includes("\\Seen"),
+      seen: flags.includes("\\Seen"),
+      flagged: flags.includes("\\Flagged"),
     });
   }
   return msgs;
@@ -209,8 +212,21 @@ async function handleSend(p) {
           await send(Buffer.from(p.email).toString("base64"));
           const a = await send(Buffer.from(p.password).toString("base64"));
           if (!a.includes("235")) throw new Error("SMTP auth failed");
-          await send(`MAIL FROM:<${p.email}>`); await send(`RCPT TO:<${p.to}>`); await send("DATA");
-          const msg = `From: ${p.email}\r\nTo: ${p.to}\r\nSubject: ${p.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\nMIME-Version: 1.0\r\nDate: ${new Date().toUTCString()}\r\n\r\n${p.body}\r\n.`;
+          await send(`MAIL FROM:<${p.email}>`);
+          // To
+          await send(`RCPT TO:<${p.to}>`);
+          // CC
+          if (p.cc) for (const addr of p.cc.split(",").map(s => s.trim()).filter(Boolean)) {
+            await send(`RCPT TO:<${addr}>`);
+          }
+          // BCC
+          if (p.bcc) for (const addr of p.bcc.split(",").map(s => s.trim()).filter(Boolean)) {
+            await send(`RCPT TO:<${addr}>`);
+          }
+          await send("DATA");
+          let msg = `From: ${p.email}\r\nTo: ${p.to}\r\n`;
+          if (p.cc) msg += `Cc: ${p.cc}\r\n`;
+          msg += `Subject: ${p.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\nMIME-Version: 1.0\r\nDate: ${new Date().toUTCString()}\r\n\r\n${p.body}\r\n.`;
           const r = await send(msg); await send("QUIT"); conn.destroy();
           resolve({ success: r.includes("250") });
         } catch (e) { conn.destroy(); reject(e); }
@@ -247,17 +263,19 @@ async function handleSearch(p) {
 
 async function handleDelete(p) {
   const folder = p.folder || "INBOX";
+  const uids = p.uids || (p.uid ? [p.uid] : []);
+  if (!uids.length) return { success: false };
   const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
   try {
     await imap.cmd(`SELECT "${folder}"`);
-    // If not in Trash, move to Trash first
+    const uidStr = uids.join(",");
     if (!folder.toLowerCase().includes("trash")) {
       for (const trash of ["INBOX.Trash", "Trash"]) {
-        const r = await imap.cmd(`UID COPY ${p.uid} "${trash}"`);
+        const r = await imap.cmd(`UID COPY ${uidStr} "${trash}"`);
         if (r.match(/^A\d+ OK/m)) break;
       }
     }
-    await imap.cmd(`UID STORE ${p.uid} +FLAGS (\\Deleted)`);
+    await imap.cmd(`UID STORE ${uidStr} +FLAGS (\\Deleted)`);
     await imap.cmd("EXPUNGE");
     await imap.cmd("LOGOUT"); imap.close();
     return { success: true };
@@ -266,10 +284,25 @@ async function handleDelete(p) {
 
 async function handleMark(p) {
   const folder = p.folder || "INBOX";
+  const uids = p.uids || (p.uid ? [p.uid] : []);
+  if (!uids.length) return { success: false };
   const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
   try {
     await imap.cmd(`SELECT "${folder}"`);
+    const uidStr = uids.join(",");
     const flag = p.seen ? "+FLAGS (\\Seen)" : "-FLAGS (\\Seen)";
+    await imap.cmd(`UID STORE ${uidStr} ${flag}`);
+    await imap.cmd("LOGOUT"); imap.close();
+    return { success: true };
+  } catch (e) { imap.close(); throw e; }
+}
+
+async function handleStar(p) {
+  const folder = p.folder || "INBOX";
+  const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
+  try {
+    await imap.cmd(`SELECT "${folder}"`);
+    const flag = p.flagged ? "+FLAGS (\\Flagged)" : "-FLAGS (\\Flagged)";
     await imap.cmd(`UID STORE ${p.uid} ${flag}`);
     await imap.cmd("LOGOUT"); imap.close();
     return { success: true };
@@ -278,15 +311,18 @@ async function handleMark(p) {
 
 async function handleMove(p) {
   const folder = p.folder || "INBOX";
+  const uids = p.uids || (p.uid ? [p.uid] : []);
+  if (!uids.length) return { success: false };
   const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
   try {
     await imap.cmd(`SELECT "${folder}"`);
-    let r = await imap.cmd(`UID COPY ${p.uid} "${p.destination}"`);
+    const uidStr = uids.join(",");
+    let r = await imap.cmd(`UID COPY ${uidStr} "${p.destination}"`);
     if (r.match(/^A\d+ NO/m)) {
       await imap.cmd(`CREATE "${p.destination}"`);
-      await imap.cmd(`UID COPY ${p.uid} "${p.destination}"`);
+      await imap.cmd(`UID COPY ${uidStr} "${p.destination}"`);
     }
-    await imap.cmd(`UID STORE ${p.uid} +FLAGS (\\Deleted)`);
+    await imap.cmd(`UID STORE ${uidStr} +FLAGS (\\Deleted)`);
     await imap.cmd("EXPUNGE");
     await imap.cmd("LOGOUT"); imap.close();
     return { success: true };
@@ -298,7 +334,7 @@ async function handleMove(p) {
 const handlers = {
   test: handleTest, folders: handleFolders, inbox: handleInbox,
   read: handleRead, send: handleSend, search: handleSearch,
-  delete: handleDelete, mark: handleMark, move: handleMove,
+  delete: handleDelete, mark: handleMark, star: handleStar, move: handleMove,
 };
 
 const server = http.createServer(async (req, res) => {
