@@ -625,10 +625,72 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
 
 /* ─── Email Viewer ─── */
 
+function AttachmentPreview({ att, onClose, onDownload }) {
+  const isImage = att.contentType?.startsWith("image/");
+  const isPdf = att.contentType?.includes("pdf");
+  const isText = att.contentType?.startsWith("text/") || att.filename?.match(/\.(txt|csv|json|xml|html|css|js|log)$/i);
+  const dataUrl = att.data ? `data:${att.contentType};base64,${att.data}` : null;
+
+  let textContent = "";
+  if (isText && att.data) {
+    try { textContent = atob(att.data); } catch {}
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-card rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-lg">{getFileIcon(att.contentType)}</span>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm truncate">{att.filename}</p>
+              <p className="text-[11px] text-muted-foreground">{formatSize(att.size)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onDownload} className="gap-1.5 rounded-lg">
+              <Download className="h-3.5 w-3.5" /> Download
+            </Button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Preview content */}
+        <div className="flex-1 overflow-auto flex items-center justify-center bg-muted/30 min-h-[300px]">
+          {isImage && dataUrl ? (
+            <img src={dataUrl} alt={att.filename} className="max-w-full max-h-[75vh] object-contain p-4" />
+          ) : isPdf && dataUrl ? (
+            <iframe src={dataUrl} className="w-full h-[75vh] border-0" title={att.filename} />
+          ) : isText && textContent ? (
+            <pre className="w-full h-full p-5 text-sm leading-relaxed font-mono overflow-auto whitespace-pre-wrap">{textContent}</pre>
+          ) : (
+            <div className="text-center py-16 px-8">
+              <div className="text-5xl mb-4">{getFileIcon(att.contentType)}</div>
+              <p className="text-sm font-medium mb-1">{att.filename}</p>
+              <p className="text-xs text-muted-foreground mb-4">{formatSize(att.size)} &middot; {att.contentType}</p>
+              <p className="text-xs text-muted-foreground mb-4">Preview tidak tersedia untuk tipe file ini</p>
+              <Button size="sm" onClick={onDownload} className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600">
+                <Download className="h-3.5 w-3.5" /> Download File
+              </Button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread, onArchive, onDownloadAttachment, folderLabel, isTrash }) {
   const { text = "", html = "", subject = "", from: rawFrom = "", to = "", cc = "", date = "", attachments = [] } = data || {};
   const fileAttachments = attachments.filter(a => !a.inline);
   const [downloadingIdx, setDownloadingIdx] = useState(null);
+  const [previewAtt, setPreviewAtt] = useState(null);
   const sender = parseSender(rawFrom);
   const iframeRef = useRef(null);
 
@@ -709,35 +771,57 @@ function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread,
                 {fileAttachments.length} Lampiran
               </span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {fileAttachments.map((att) => (
-                <motion.button
-                  key={att.index}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={async () => {
-                    setDownloadingIdx(att.index);
-                    await onDownloadAttachment(att.index, att.filename, att.contentType);
-                    setDownloadingIdx(null);
-                  }}
-                  disabled={downloadingIdx === att.index}
-                  className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-card border border-border/60 hover:border-primary/40 hover:shadow-md transition-all text-sm group"
-                >
-                  <span className="text-lg">{getFileIcon(att.contentType)}</span>
-                  <div className="text-left min-w-0">
-                    <p className="font-medium truncate max-w-[180px]">{att.filename}</p>
-                    <p className="text-[11px] text-muted-foreground">{formatSize(att.size)}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {fileAttachments.map((att) => {
+                const isImage = att.contentType?.startsWith("image/") && att.data;
+                const thumbUrl = isImage ? `data:${att.contentType};base64,${att.data}` : null;
+                return (
+                  <div key={att.index} className="rounded-xl border border-border/60 overflow-hidden hover:border-primary/40 hover:shadow-md transition-all group bg-card">
+                    {/* Thumbnail / icon - click to preview */}
+                    <button onClick={() => setPreviewAtt(att)}
+                      className="w-full aspect-[4/3] bg-muted/30 flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity">
+                      {thumbUrl ? (
+                        <img src={thumbUrl} alt={att.filename} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center">
+                          <span className="text-3xl block mb-1">{getFileIcon(att.contentType)}</span>
+                          <span className="text-[10px] text-muted-foreground uppercase">{att.contentType?.split("/")[1]?.split(";")[0] || "file"}</span>
+                        </div>
+                      )}
+                    </button>
+                    {/* Info + download */}
+                    <div className="px-2.5 py-2 flex items-center gap-1.5">
+                      <div className="flex-1 min-w-0" onClick={() => setPreviewAtt(att)} role="button">
+                        <p className="text-xs font-medium truncate">{att.filename}</p>
+                        <p className="text-[10px] text-muted-foreground">{formatSize(att.size)}</p>
+                      </div>
+                      <button
+                        onClick={async (e) => { e.stopPropagation(); setDownloadingIdx(att.index); await onDownloadAttachment(att.index, att.filename, att.contentType); setDownloadingIdx(null); }}
+                        className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                        title="Download">
+                        {downloadingIdx === att.index ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                   </div>
-                  {downloadingIdx === att.index ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-primary ml-1" />
-                  ) : (
-                    <Download className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary ml-1 transition-colors" />
-                  )}
-                </motion.button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
+
+        {/* Attachment preview modal */}
+        <AnimatePresence>
+          {previewAtt && (
+            <AttachmentPreview
+              att={previewAtt}
+              onClose={() => setPreviewAtt(null)}
+              onDownload={async () => {
+                await onDownloadAttachment(previewAtt.index, previewAtt.filename, previewAtt.contentType);
+                setPreviewAtt(null);
+              }}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Actions */}
         <div className="px-5 py-3.5 border-t bg-muted/20 flex flex-wrap gap-2">
