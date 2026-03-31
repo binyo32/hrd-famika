@@ -422,6 +422,8 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
   const [cc, setCc] = useState("");
   const [bcc, setBcc] = useState("");
   const [files, setFiles] = useState([]);
+  const [draggingOver, setDraggingOver] = useState(false);
+  const dragCountRef = useRef(0);
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -447,8 +449,8 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
     if (url) execCmd("insertImage", url);
   };
 
-  const handleFileSelect = (e) => {
-    for (const file of e.target.files) {
+  const addFiles = (fileList) => {
+    for (const file of fileList) {
       if (file.size > 10 * 1024 * 1024) { alert(`${file.name} terlalu besar (max 10MB)`); continue; }
       const reader = new FileReader();
       reader.onload = () => {
@@ -459,8 +461,19 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
       };
       reader.readAsDataURL(file);
     }
-    e.target.value = "";
   };
+
+  const handleFileSelect = (e) => { addFiles(e.target.files); e.target.value = ""; };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDraggingOver(false); dragCountRef.current = 0;
+    if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
+  };
+
+  const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); dragCountRef.current++; setDraggingOver(true); };
+  const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); dragCountRef.current--; if (dragCountRef.current <= 0) { setDraggingOver(false); dragCountRef.current = 0; } };
+  const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
 
   const removeFile = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
 
@@ -491,8 +504,24 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <motion.div initial={{ y: "100%", opacity: 0.5 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="relative bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+        className="relative bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden"
+        onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
         {sendSuccess && <SendSuccessOverlay />}
+
+        {/* Drag & drop overlay */}
+        <AnimatePresence>
+          {draggingOver && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-20 bg-primary/10 backdrop-blur-[2px] border-2 border-dashed border-primary rounded-2xl flex flex-col items-center justify-center pointer-events-none">
+              <motion.div initial={{ scale: 0.8, y: 10 }} animate={{ scale: 1, y: 0 }}
+                className="h-16 w-16 rounded-2xl bg-primary/20 flex items-center justify-center mb-3">
+                <Paperclip className="h-8 w-8 text-primary" />
+              </motion.div>
+              <p className="text-sm font-semibold text-primary">Drop file di sini</p>
+              <p className="text-xs text-primary/60 mt-1">Maks 10MB per file</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b bg-gradient-to-r from-blue-500/5 to-purple-500/5">
