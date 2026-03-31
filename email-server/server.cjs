@@ -2,7 +2,7 @@ const http = require("http");
 const tls = require("tls");
 const PORT = 8889;
 
-/* ─── MIME Decoder ─── */
+/* ─── MIME Helpers ─── */
 
 function decodeQP(str) {
   return str.replace(/=\r?\n/g, "").replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
@@ -27,60 +27,145 @@ function parseSender(from) {
   return m ? { name: m[1].trim(), email: (m[2] || "").trim() } : { name: d, email: d };
 }
 
-function parseEmail(raw) {
-  if (!raw) return { text: "", html: "", subject: "", from: "", to: "", date: "" };
-  const si = raw.indexOf("\r\n\r\n");
-  if (si === -1) return { text: raw, html: "", subject: "", from: "", to: "", date: "" };
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
-  const hdr = raw.substring(0, si);
-  const body = raw.substring(si + 4);
+function decodeBody(body, encoding) {
+  const enc = (encoding || "").toLowerCase().trim();
+  if (enc.includes("base64")) return decodeB64(body);
+  if (enc.includes("quoted-printable")) return decodeQP(body);
+  return body;
+}
 
+function parsePartHeaders(str) {
   const h = {};
-  let ck = "";
-  for (const line of hdr.split(/\r?\n/)) {
-    if (/^\s/.test(line) && ck) { h[ck] += " " + line.trim(); }
-    else { const m = line.match(/^([\w-]+):\s*(.*)/); if (m) { ck = m[1].toLowerCase(); h[ck] = m[2]; } }
+  let k = "";
+  for (const line of str.split(/\r?\n/)) {
+    if (/^\s/.test(line) && k) h[k] += " " + line.trim();
+    else { const m = line.match(/^([\w-]+):\s*(.*)/); if (m) { k = m[1].toLowerCase(); h[k] = m[2]; } }
   }
+  return h;
+}
 
-  const ct = h["content-type"] || "text/plain";
-  const cte = (h["content-transfer-encoding"] || "").toLowerCase();
+function getFilename(headers) {
+  const cd = headers["content-disposition"] || "";
+  let m = cd.match(/filename\*\s*=\s*[^']*'[^']*'([^;\s]+)/i);
+  if (m) try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+  m = cd.match(/filename\s*=\s*"?([^";\r\n]+)"?/i);
+  if (m) return decodeHeader(m[1].trim());
+  const ct = headers["content-type"] || "";
+  m = ct.match(/name\s*=\s*"?([^";\r\n]+)"?/i);
+  if (m) return decodeHeader(m[1].trim());
+  return null;
+}
+
+/* ─── Recursive MIME Parser ─── */
+
+function parseMimePart(raw) {
+  let si = raw.indexOf("\r\n\r\n");
+  if (si === -1) {
+    si = raw.indexOf("\n\n");
+    if (si === -1) return { headers: parsePartHeaders(raw), body: "", parts: [] };
+    return { headers: parsePartHeaders(raw.substring(0, si)), body: raw.substring(si + 2), parts: [] };
+  }
+  const headers = parsePartHeaders(raw.substring(0, si));
+  const body = raw.substring(si + 4);
+  const ct = headers["content-type"] || "";
   const bm = ct.match(/boundary="?([^";\s]+)"?/);
 
-  let textContent = "", htmlContent = "";
-
   if (bm) {
-    const textMatch = raw.match(/Content-Type:\s*text\/plain[^\r\n]*\r?\n(?:[\w-]+:[^\r\n]*\r?\n)*\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\)?\s*$)/i);
-    if (textMatch) {
-      let t = textMatch[1].trim();
-      const beforeText = raw.substring(0, raw.indexOf(textMatch[0]) + 200).toLowerCase();
-      if (beforeText.includes("quoted-printable")) t = decodeQP(t);
-      else if (beforeText.includes("base64")) t = decodeB64(t);
-      textContent = t;
+    const boundary = bm[1];
+    const sections = body.split("--" + boundary);
+    const parts = [];
+    for (let i = 1; i < sections.length; i++) {
+      if (sections[i].trimStart().startsWith("--")) break;
+      parts.push(parseMimePart(sections[i].replace(/^\r?\n/, "")));
     }
+    return { headers, body: "", parts };
+  }
+  return { headers, body, parts: [] };
+}
 
-    const htmlMatch = raw.match(/Content-Type:\s*text\/html[^\r\n]*\r?\n(?:[\w-]+:[^\r\n]*\r?\n)*\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\)?\s*$)/i);
-    if (htmlMatch) {
-      let hh = htmlMatch[1].trim();
-      const beforeHtml = raw.substring(0, raw.indexOf(htmlMatch[0]) + 200).toLowerCase();
-      if (beforeHtml.includes("quoted-printable")) hh = decodeQP(hh);
-      else if (beforeHtml.includes("base64")) hh = decodeB64(hh);
-      htmlContent = hh;
+function extractContent(part) {
+  let text = "", html = "";
+  const attachments = [];
+
+  if (part.parts.length > 0) {
+    for (const sub of part.parts) {
+      const r = extractContent(sub);
+      if (!text && r.text) text = r.text;
+      if (!html && r.html) html = r.html;
+      attachments.push(...r.attachments);
     }
   } else {
-    let b = body;
-    if (cte.includes("quoted-printable")) b = decodeQP(b);
-    else if (cte.includes("base64")) b = decodeB64(b);
-    if (ct.includes("text/html") || b.includes("<html") || b.includes("<HTML")) htmlContent = b;
-    else textContent = b;
+    const ct = (part.headers["content-type"] || "text/plain").toLowerCase();
+    const cte = (part.headers["content-transfer-encoding"] || "").toLowerCase();
+    const cd = (part.headers["content-disposition"] || "").toLowerCase();
+    const cid = (part.headers["content-id"] || "").replace(/[<>]/g, "");
+    const filename = getFilename(part.headers);
+    const body = (part.body || "").replace(/\r?\n$/, "");
+
+    const isAttach = cd.includes("attachment");
+    const isFileByName = filename && !ct.startsWith("text/plain") && !ct.startsWith("text/html");
+    const isNonText = !ct.startsWith("text/");
+    const hasInlineMedia = (cd.includes("inline") || !!cid) && isNonText;
+
+    if (isAttach || isFileByName) {
+      attachments.push({
+        filename: filename || "attachment", contentType: ct.split(";")[0].trim(),
+        encoding: cte, data: body, contentId: cid, inline: false,
+        size: cte.includes("base64") ? Math.floor(body.replace(/\s/g, "").length * 3 / 4) : body.length,
+      });
+    } else if (hasInlineMedia) {
+      attachments.push({
+        filename: filename || "inline", contentType: ct.split(";")[0].trim(),
+        encoding: cte, data: body, contentId: cid, inline: true,
+        size: cte.includes("base64") ? Math.floor(body.replace(/\s/g, "").length * 3 / 4) : body.length,
+      });
+    } else if (ct.startsWith("text/html")) {
+      html = decodeBody(body, cte);
+    } else if (ct.startsWith("text/plain")) {
+      text = decodeBody(body, cte);
+    } else if (body.length > 0 && isNonText) {
+      attachments.push({
+        filename: filename || "file", contentType: ct.split(";")[0].trim(),
+        encoding: cte, data: body, contentId: cid, inline: false,
+        size: cte.includes("base64") ? Math.floor(body.replace(/\s/g, "").length * 3 / 4) : body.length,
+      });
+    }
+  }
+  return { text, html, attachments };
+}
+
+function parseEmail(raw) {
+  if (!raw) return { text: "", html: "", subject: "", from: "", to: "", cc: "", date: "", attachments: [] };
+
+  const root = parseMimePart(raw);
+  const content = extractContent(root);
+
+  // Replace CID references in HTML with inline data URIs
+  let html = content.html;
+  if (html && content.attachments.length) {
+    for (const att of content.attachments) {
+      if (att.contentId && att.data) {
+        const clean = att.data.replace(/\s/g, "");
+        const b64 = att.encoding.includes("base64") ? clean : Buffer.from(clean).toString("base64");
+        html = html.replace(new RegExp(`cid:${escapeRegex(att.contentId)}`, "gi"), `data:${att.contentType};base64,${b64}`);
+      }
+    }
   }
 
+  const attachments = content.attachments.map((a, i) => ({
+    index: i, filename: a.filename, contentType: a.contentType, size: a.size, inline: a.inline,
+  }));
+
   return {
-    text: textContent, html: htmlContent,
-    subject: decodeHeader(h.subject || ""),
-    from: decodeHeader(h.from || ""),
-    to: decodeHeader(h.to || ""),
-    cc: decodeHeader(h.cc || ""),
-    date: h.date || "",
+    text: content.text, html,
+    subject: decodeHeader(root.headers.subject || ""),
+    from: decodeHeader(root.headers.from || ""),
+    to: decodeHeader(root.headers.to || ""),
+    cc: decodeHeader(root.headers.cc || ""),
+    date: root.headers.date || "",
+    attachments,
   };
 }
 
@@ -125,8 +210,7 @@ function parseFetchBlocks(raw) {
     const sender = parseSender(rawFrom);
     msgs.push({
       num, uid,
-      from: sender.name,
-      fromEmail: sender.email,
+      from: sender.name, fromEmail: sender.email,
       subject: decodeHeader(rawSubject) || "(Tanpa Subjek)",
       date: b.match(/Date:\s*(.+)/i)?.[1]?.trim() || "",
       seen: flags.includes("\\Seen"),
@@ -159,9 +243,7 @@ async function handleFolders(p) {
           const total = parseInt(st.match(/MESSAGES (\d+)/)?.[1] || "0");
           const unseen = parseInt(st.match(/UNSEEN (\d+)/)?.[1] || "0");
           folders.push({ name, total, unseen });
-        } catch {
-          folders.push({ name, total: 0, unseen: 0 });
-        }
+        } catch { folders.push({ name, total: 0, unseen: 0 }); }
       }
     }
     await imap.cmd("LOGOUT"); imap.close();
@@ -201,6 +283,27 @@ async function handleRead(p) {
   } catch (e) { imap.close(); throw e; }
 }
 
+async function handleAttachment(p) {
+  const folder = p.folder || "INBOX";
+  const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
+  try {
+    await imap.cmd(`SELECT "${folder}"`);
+    const r = await imap.cmd(`UID FETCH ${p.uid} (BODY[])`);
+    await imap.cmd("LOGOUT"); imap.close();
+    const s = r.indexOf("\r\n") + 2, e = r.lastIndexOf("\r\n)");
+    const rawEmail = r.substring(s, e > s ? e : undefined);
+
+    const root = parseMimePart(rawEmail);
+    const content = extractContent(root);
+    const att = content.attachments[p.index];
+    if (!att) return { error: "Attachment not found" };
+
+    const clean = att.data.replace(/\s/g, "");
+    const b64 = att.encoding.includes("base64") ? clean : Buffer.from(clean).toString("base64");
+    return { filename: att.filename, contentType: att.contentType, data: b64 };
+  } catch (e) { imap.close(); throw e; }
+}
+
 async function handleSend(p) {
   return new Promise((resolve, reject) => {
     const conn = tls.connect(p.smtp_port, p.smtp_server, { rejectUnauthorized: false }, () => {
@@ -213,16 +316,9 @@ async function handleSend(p) {
           const a = await send(Buffer.from(p.password).toString("base64"));
           if (!a.includes("235")) throw new Error("SMTP auth failed");
           await send(`MAIL FROM:<${p.email}>`);
-          // To
           await send(`RCPT TO:<${p.to}>`);
-          // CC
-          if (p.cc) for (const addr of p.cc.split(",").map(s => s.trim()).filter(Boolean)) {
-            await send(`RCPT TO:<${addr}>`);
-          }
-          // BCC
-          if (p.bcc) for (const addr of p.bcc.split(",").map(s => s.trim()).filter(Boolean)) {
-            await send(`RCPT TO:<${addr}>`);
-          }
+          if (p.cc) for (const addr of p.cc.split(",").map(s => s.trim()).filter(Boolean)) await send(`RCPT TO:<${addr}>`);
+          if (p.bcc) for (const addr of p.bcc.split(",").map(s => s.trim()).filter(Boolean)) await send(`RCPT TO:<${addr}>`);
           await send("DATA");
           let msg = `From: ${p.email}\r\nTo: ${p.to}\r\n`;
           if (p.cc) msg += `Cc: ${p.cc}\r\n`;
@@ -247,12 +343,10 @@ async function handleSearch(p) {
     const match = r.match(/\* SEARCH([\d\s]*)/);
     const uids = match && match[1].trim() ? match[1].trim().split(/\s+/).map(Number).reverse() : [];
     if (!uids.length) { await imap.cmd("LOGOUT"); imap.close(); return { messages: [], total: 0 }; }
-
     const pp = p.perPage || 20, pg = p.page || 1;
     const si = (pg - 1) * pp;
     const pageUids = uids.slice(si, si + pp);
     if (!pageUids.length) { await imap.cmd("LOGOUT"); imap.close(); return { messages: [], total: uids.length, page: pg, perPage: pp }; }
-
     const f = await imap.cmd(`UID FETCH ${pageUids.join(",")} (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])`);
     const msgs = parseFetchBlocks(f);
     msgs.sort((a, b) => b.uid - a.uid);
@@ -289,9 +383,8 @@ async function handleMark(p) {
   const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
   try {
     await imap.cmd(`SELECT "${folder}"`);
-    const uidStr = uids.join(",");
     const flag = p.seen ? "+FLAGS (\\Seen)" : "-FLAGS (\\Seen)";
-    await imap.cmd(`UID STORE ${uidStr} ${flag}`);
+    await imap.cmd(`UID STORE ${uids.join(",")} ${flag}`);
     await imap.cmd("LOGOUT"); imap.close();
     return { success: true };
   } catch (e) { imap.close(); throw e; }
@@ -335,6 +428,7 @@ const handlers = {
   test: handleTest, folders: handleFolders, inbox: handleInbox,
   read: handleRead, send: handleSend, search: handleSearch,
   delete: handleDelete, mark: handleMark, star: handleStar, move: handleMove,
+  attachment: handleAttachment,
 };
 
 const server = http.createServer(async (req, res) => {

@@ -8,7 +8,7 @@ import {
   Mail, Send, Inbox, RefreshCw, ArrowLeft, Loader2,
   Eye, EyeOff, CheckCircle, XCircle, PenSquare, X, LogOut, Search,
   Trash2, MailOpen, Archive, FileText, AlertTriangle, Bell, Folder,
-  ChevronDown, Star, Reply, Check, MoreVertical, Share2,
+  ChevronDown, Star, Reply, Check, MoreVertical, Share2, Paperclip, Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
@@ -85,6 +85,25 @@ function getGradient(str) {
   let hash = 0;
   for (let i = 0; i < (str || "").length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
   return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+}
+
+function formatSize(bytes) {
+  if (!bytes || bytes < 1) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function getFileIcon(contentType) {
+  if (!contentType) return "📎";
+  if (contentType.startsWith("image/")) return "🖼️";
+  if (contentType.includes("pdf")) return "📄";
+  if (contentType.includes("word") || contentType.includes("document")) return "📝";
+  if (contentType.includes("sheet") || contentType.includes("excel")) return "📊";
+  if (contentType.includes("zip") || contentType.includes("rar") || contentType.includes("archive")) return "📦";
+  if (contentType.startsWith("video/")) return "🎬";
+  if (contentType.startsWith("audio/")) return "🎵";
+  return "📎";
 }
 
 /* ─── API Hook ─── */
@@ -379,8 +398,10 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
 
 /* ─── Email Viewer ─── */
 
-function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread, onArchive, folderLabel, isTrash }) {
-  const { text = "", html = "", subject = "", from: rawFrom = "", to = "", cc = "", date = "" } = data || {};
+function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread, onArchive, onDownloadAttachment, folderLabel, isTrash }) {
+  const { text = "", html = "", subject = "", from: rawFrom = "", to = "", cc = "", date = "", attachments = [] } = data || {};
+  const fileAttachments = attachments.filter(a => !a.inline);
+  const [downloadingIdx, setDownloadingIdx] = useState(null);
   const sender = parseSender(rawFrom);
   const iframeRef = useRef(null);
 
@@ -443,6 +464,45 @@ function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread,
             <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-foreground/80">{text || "(Tidak ada isi)"}</pre>
           )}
         </div>
+
+        {/* Attachments */}
+        {fileAttachments.length > 0 && (
+          <div className="px-5 py-4 border-t bg-muted/10">
+            <div className="flex items-center gap-2 mb-3">
+              <Paperclip className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                {fileAttachments.length} Lampiran
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {fileAttachments.map((att) => (
+                <motion.button
+                  key={att.index}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={async () => {
+                    setDownloadingIdx(att.index);
+                    await onDownloadAttachment(att.index, att.filename, att.contentType);
+                    setDownloadingIdx(null);
+                  }}
+                  disabled={downloadingIdx === att.index}
+                  className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-card border border-border/60 hover:border-primary/40 hover:shadow-md transition-all text-sm group"
+                >
+                  <span className="text-lg">{getFileIcon(att.contentType)}</span>
+                  <div className="text-left min-w-0">
+                    <p className="font-medium truncate max-w-[180px]">{att.filename}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatSize(att.size)}</p>
+                  </div>
+                  {downloadingIdx === att.index ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary ml-1" />
+                  ) : (
+                    <Download className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary ml-1 transition-colors" />
+                  )}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="px-5 py-3.5 border-t bg-muted/20 flex flex-wrap gap-2">
@@ -713,6 +773,30 @@ export default function AdminEmail() {
     setReadingMsg(null);
   };
 
+  const downloadAttachment = async (index, filename, contentType) => {
+    try {
+      const r = await api("attachment", { uid: readMeta?.uid, index, folder: readMeta?.folder });
+      if (r.data) {
+        const byteChars = atob(r.data);
+        const byteArrays = [];
+        for (let off = 0; off < byteChars.length; off += 1024) {
+          const slice = byteChars.slice(off, off + 1024);
+          const bytes = new Uint8Array(slice.length);
+          for (let i = 0; i < slice.length; i++) bytes[i] = slice.charCodeAt(i);
+          byteArrays.push(bytes);
+        }
+        const blob = new Blob(byteArrays, { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+        showToast(`${filename} diunduh`);
+      } else {
+        showToast("Gagal mengunduh lampiran", "error");
+      }
+    } catch { showToast("Gagal mengunduh lampiran", "error"); }
+  };
+
   const handleSend = async (data) => {
     setSending(true);
     try {
@@ -854,6 +938,7 @@ export default function AdminEmail() {
               onDelete={() => readMeta && deleteEmail(readMeta.uid)}
               onMarkUnread={() => { if (readMeta) { markEmail(readMeta.uid, false); setReadData(null); setReadMeta(null); } }}
               onArchive={() => readMeta && archiveEmail(readMeta.uid)}
+              onDownloadAttachment={downloadAttachment}
             />
           ) : (
             <>
@@ -1013,7 +1098,7 @@ export default function AdminEmail() {
                               {/* Star */}
                               <button
                                 onClick={(e) => { e.stopPropagation(); toggleStar(msg.uid, !msg.flagged); }}
-                                className={`flex-shrink-0 transition-all ${msg.flagged ? "text-amber-400 scale-110" : "text-transparent group-hover:text-muted-foreground/30 hover:!text-amber-400"}`}
+                                className={`flex-shrink-0 transition-all ${msg.flagged ? "text-amber-400 scale-110" : "text-muted-foreground/25 hover:text-amber-400"}`}
                               >
                                 <Star className={`h-4 w-4 ${msg.flagged ? "fill-current" : ""}`} />
                               </button>
