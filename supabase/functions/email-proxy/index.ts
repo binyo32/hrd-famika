@@ -97,6 +97,20 @@ serve(async (req) => {
       return json({ success: true });
     }
 
+    // ── Test action (credentials sent directly in request) ──
+
+    if (action === "test") {
+      const res = await fetch(EMAIL_SERVER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...params }),
+      });
+      return new Response(await res.text(), {
+        status: res.status,
+        headers: { "Content-Type": "application/json; charset=utf-8", ...CORS },
+      });
+    }
+
     // ── All other actions → proxy to VPS email server ──
 
     const { data: config } = await supabase
