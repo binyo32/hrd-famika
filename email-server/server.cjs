@@ -35,7 +35,6 @@ function parseEmail(raw) {
   const hdr = raw.substring(0, si);
   const body = raw.substring(si + 4);
 
-  // Parse headers (handle multi-line)
   const h = {};
   let ck = "";
   for (const line of hdr.split(/\r?\n/)) {
@@ -49,27 +48,23 @@ function parseEmail(raw) {
 
   let textContent = "", htmlContent = "";
 
-  // Simple approach: find ALL text/plain and text/html sections by regex
   if (bm) {
-    // Find text/plain content
     const textMatch = raw.match(/Content-Type:\s*text\/plain[^\r\n]*\r?\n(?:[\w-]+:[^\r\n]*\r?\n)*\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\)?\s*$)/i);
     if (textMatch) {
       let t = textMatch[1].trim();
-      // Check if it was QP or base64
       const beforeText = raw.substring(0, raw.indexOf(textMatch[0]) + 200).toLowerCase();
       if (beforeText.includes("quoted-printable")) t = decodeQP(t);
       else if (beforeText.includes("base64")) t = decodeB64(t);
       textContent = t;
     }
 
-    // Find text/html content
     const htmlMatch = raw.match(/Content-Type:\s*text\/html[^\r\n]*\r?\n(?:[\w-]+:[^\r\n]*\r?\n)*\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\)?\s*$)/i);
     if (htmlMatch) {
-      let h = htmlMatch[1].trim();
+      let hh = htmlMatch[1].trim();
       const beforeHtml = raw.substring(0, raw.indexOf(htmlMatch[0]) + 200).toLowerCase();
-      if (beforeHtml.includes("quoted-printable")) h = decodeQP(h);
-      else if (beforeHtml.includes("base64")) h = decodeB64(h);
-      htmlContent = h;
+      if (beforeHtml.includes("quoted-printable")) hh = decodeQP(hh);
+      else if (beforeHtml.includes("base64")) hh = decodeB64(hh);
+      htmlContent = hh;
     }
   } else {
     let b = body;
@@ -115,38 +110,74 @@ function imapConnect(server, port, email, password) {
   });
 }
 
+/* ─── Helper: parse FETCH blocks into message array ─── */
+
+function parseFetchBlocks(raw) {
+  const msgs = [];
+  const blocks = raw.split(/\* (\d+) FETCH/);
+  for (let i = 1; i < blocks.length; i += 2) {
+    const num = parseInt(blocks[i]), b = blocks[i + 1] || "";
+    const uid = parseInt(b.match(/UID (\d+)/)?.[1] || "0");
+    const rawFrom = b.match(/From:\s*([\s\S]*?)(?=\r?\n[\w-]+:|\r?\n\))/i)?.[1]?.replace(/\r?\n\s+/g, " ").trim() || "";
+    const rawSubject = b.match(/Subject:\s*([\s\S]*?)(?=\r?\n[\w-]+:|\r?\n\))/i)?.[1]?.replace(/\r?\n\s+/g, " ").trim() || "";
+    const sender = parseSender(rawFrom);
+    msgs.push({
+      num, uid,
+      from: sender.name,
+      fromEmail: sender.email,
+      subject: decodeHeader(rawSubject) || "(Tanpa Subjek)",
+      date: b.match(/Date:\s*(.+)/i)?.[1]?.trim() || "",
+      seen: (b.match(/FLAGS \(([^)]*)\)/)?.[1] || "").includes("\\Seen"),
+    });
+  }
+  return msgs;
+}
+
+/* ─── Handlers ─── */
+
 async function handleTest(p) {
   const imap = await imapConnect(p.imap_server || "mail.fajarmitra.co.id", p.imap_port || 993, p.email, p.password);
   await imap.cmd("LOGOUT"); imap.close();
   return { success: true };
 }
 
+async function handleFolders(p) {
+  const imap = await imapConnect(p.imap_server || "mail.fajarmitra.co.id", p.imap_port || 993, p.email, p.password);
+  try {
+    const r = await imap.cmd('LIST "" "*"');
+    const folders = [];
+    for (const line of r.split("\r\n")) {
+      const m = line.match(/\* LIST \(([^)]*)\) "([^"]*)" (.+)/);
+      if (m) {
+        if (m[1].includes("\\Noselect")) continue;
+        let name = m[3].replace(/^"(.*)"$/, "$1");
+        try {
+          const st = await imap.cmd(`STATUS "${name}" (MESSAGES UNSEEN)`);
+          const total = parseInt(st.match(/MESSAGES (\d+)/)?.[1] || "0");
+          const unseen = parseInt(st.match(/UNSEEN (\d+)/)?.[1] || "0");
+          folders.push({ name, total, unseen });
+        } catch {
+          folders.push({ name, total: 0, unseen: 0 });
+        }
+      }
+    }
+    await imap.cmd("LOGOUT"); imap.close();
+    return { folders };
+  } catch (e) { imap.close(); throw e; }
+}
+
 async function handleInbox(p) {
+  const folder = p.folder || "INBOX";
   const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
   try {
-    const sel = await imap.cmd("SELECT INBOX");
+    const sel = await imap.cmd(`SELECT "${folder}"`);
     const total = parseInt(sel.match(/(\d+) EXISTS/)?.[1] || "0");
     if (!total) { await imap.cmd("LOGOUT"); imap.close(); return { messages: [], total: 0 }; }
     const pp = p.perPage || 20, pg = p.page || 1;
     const end = Math.max(1, total - (pg - 1) * pp);
     const start = Math.max(1, end - pp + 1);
-    const f = await imap.cmd(`FETCH ${start}:${end} (FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])`);
-    const msgs = [];
-    const blocks = f.split(/\* (\d+) FETCH/);
-    for (let i = 1; i < blocks.length; i += 2) {
-      const num = parseInt(blocks[i]), b = blocks[i + 1] || "";
-      const rawFrom = b.match(/From:\s*([\s\S]*?)(?=\r?\n[\w-]+:|\r?\n\))/i)?.[1]?.replace(/\r?\n\s+/g, " ").trim() || "";
-      const rawSubject = b.match(/Subject:\s*([\s\S]*?)(?=\r?\n[\w-]+:|\r?\n\))/i)?.[1]?.replace(/\r?\n\s+/g, " ").trim() || "";
-      const sender = parseSender(rawFrom);
-      msgs.push({
-        num,
-        from: sender.name,
-        fromEmail: sender.email,
-        subject: decodeHeader(rawSubject) || "(Tanpa Subjek)",
-        date: b.match(/Date:\s*(.+)/i)?.[1]?.trim() || "",
-        seen: (b.match(/FLAGS \(([^)]*)\)/)?.[1] || "").includes("\\Seen"),
-      });
-    }
+    const f = await imap.cmd(`FETCH ${start}:${end} (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])`);
+    const msgs = parseFetchBlocks(f);
     msgs.reverse();
     await imap.cmd("LOGOUT"); imap.close();
     return { messages: msgs, total, page: pg, perPage: pp };
@@ -154,10 +185,12 @@ async function handleInbox(p) {
 }
 
 async function handleRead(p) {
+  const folder = p.folder || "INBOX";
   const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
   try {
-    await imap.cmd("SELECT INBOX");
-    const r = await imap.cmd(`FETCH ${p.msgNum} (BODY[])`);
+    await imap.cmd(`SELECT "${folder}"`);
+    const cmd = p.uid ? `UID FETCH ${p.uid} (BODY[])` : `FETCH ${p.msgNum} (BODY[])`;
+    const r = await imap.cmd(cmd);
     await imap.cmd("LOGOUT"); imap.close();
     const s = r.indexOf("\r\n") + 2, e = r.lastIndexOf("\r\n)");
     const rawEmail = r.substring(s, e > s ? e : undefined);
@@ -187,7 +220,86 @@ async function handleSend(p) {
   });
 }
 
+async function handleSearch(p) {
+  const folder = p.folder || "INBOX";
+  const query = (p.query || "").replace(/"/g, '\\"');
+  if (!query) return { messages: [], total: 0 };
+  const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
+  try {
+    await imap.cmd(`SELECT "${folder}"`);
+    const r = await imap.cmd(`UID SEARCH TEXT "${query}"`);
+    const match = r.match(/\* SEARCH([\d\s]*)/);
+    const uids = match && match[1].trim() ? match[1].trim().split(/\s+/).map(Number).reverse() : [];
+    if (!uids.length) { await imap.cmd("LOGOUT"); imap.close(); return { messages: [], total: 0 }; }
+
+    const pp = p.perPage || 20, pg = p.page || 1;
+    const si = (pg - 1) * pp;
+    const pageUids = uids.slice(si, si + pp);
+    if (!pageUids.length) { await imap.cmd("LOGOUT"); imap.close(); return { messages: [], total: uids.length, page: pg, perPage: pp }; }
+
+    const f = await imap.cmd(`UID FETCH ${pageUids.join(",")} (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])`);
+    const msgs = parseFetchBlocks(f);
+    msgs.sort((a, b) => b.uid - a.uid);
+    await imap.cmd("LOGOUT"); imap.close();
+    return { messages: msgs, total: uids.length, page: pg, perPage: pp };
+  } catch (e) { imap.close(); throw e; }
+}
+
+async function handleDelete(p) {
+  const folder = p.folder || "INBOX";
+  const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
+  try {
+    await imap.cmd(`SELECT "${folder}"`);
+    // If not in Trash, move to Trash first
+    if (!folder.toLowerCase().includes("trash")) {
+      for (const trash of ["INBOX.Trash", "Trash"]) {
+        const r = await imap.cmd(`UID COPY ${p.uid} "${trash}"`);
+        if (r.match(/^A\d+ OK/m)) break;
+      }
+    }
+    await imap.cmd(`UID STORE ${p.uid} +FLAGS (\\Deleted)`);
+    await imap.cmd("EXPUNGE");
+    await imap.cmd("LOGOUT"); imap.close();
+    return { success: true };
+  } catch (e) { imap.close(); throw e; }
+}
+
+async function handleMark(p) {
+  const folder = p.folder || "INBOX";
+  const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
+  try {
+    await imap.cmd(`SELECT "${folder}"`);
+    const flag = p.seen ? "+FLAGS (\\Seen)" : "-FLAGS (\\Seen)";
+    await imap.cmd(`UID STORE ${p.uid} ${flag}`);
+    await imap.cmd("LOGOUT"); imap.close();
+    return { success: true };
+  } catch (e) { imap.close(); throw e; }
+}
+
+async function handleMove(p) {
+  const folder = p.folder || "INBOX";
+  const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
+  try {
+    await imap.cmd(`SELECT "${folder}"`);
+    let r = await imap.cmd(`UID COPY ${p.uid} "${p.destination}"`);
+    if (r.match(/^A\d+ NO/m)) {
+      await imap.cmd(`CREATE "${p.destination}"`);
+      await imap.cmd(`UID COPY ${p.uid} "${p.destination}"`);
+    }
+    await imap.cmd(`UID STORE ${p.uid} +FLAGS (\\Deleted)`);
+    await imap.cmd("EXPUNGE");
+    await imap.cmd("LOGOUT"); imap.close();
+    return { success: true };
+  } catch (e) { imap.close(); throw e; }
+}
+
 /* ─── HTTP Server ─── */
+
+const handlers = {
+  test: handleTest, folders: handleFolders, inbox: handleInbox,
+  read: handleRead, send: handleSend, search: handleSearch,
+  delete: handleDelete, mark: handleMark, move: handleMove,
+};
 
 const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -199,12 +311,8 @@ const server = http.createServer(async (req, res) => {
   req.on("end", async () => {
     try {
       const { action, ...rest } = JSON.parse(body);
-      let result;
-      if (action === "test") result = await handleTest(rest);
-      else if (action === "inbox") result = await handleInbox(rest);
-      else if (action === "read") result = await handleRead(rest);
-      else if (action === "send") result = await handleSend(rest);
-      else { res.writeHead(400); return res.end(JSON.stringify({ error: "Unknown action" })); }
+      if (!handlers[action]) { res.writeHead(400); return res.end(JSON.stringify({ error: "Unknown action: " + action })); }
+      const result = await handlers[action](rest);
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify(result));
     } catch (e) {
