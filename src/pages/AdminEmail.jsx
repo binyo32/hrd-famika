@@ -973,6 +973,15 @@ export default function AdminEmail() {
     try { const r = await api("folders"); if (r.folders) setFolders(r.folders); } catch {}
   }, [api]);
 
+  // Update browser tab title with unread count
+  useEffect(() => {
+    const inboxUnseen = folders.find((f) => f.name === "INBOX")?.unseen || 0;
+    const totalUnseen = folders.reduce((sum, f) => sum + (f.unseen || 0), 0);
+    const count = totalUnseen || inboxUnseen;
+    document.title = count > 0 ? `(${count}) Email - HRD Famika` : "Email - HRD Famika";
+    return () => { document.title = "HRD Famika"; };
+  }, [folders]);
+
   const loadInbox = useCallback(async (pg = 1, silent = false) => {
     if (!silent) setLoadingInbox(true);
     // Don't clear inbox on folder switch - keep old data visible while loading
@@ -1026,6 +1035,8 @@ export default function AdminEmail() {
         prevTotalRef.current = r.total || 0;
         setInbox(r);
         setLastRefresh(new Date());
+        // Refresh folder counts so tab title updates
+        try { const fr = await api("folders"); if (fr.folders) setFolders(fr.folders); } catch {}
       } catch {}
     }, 30000);
     return () => clearInterval(id);
