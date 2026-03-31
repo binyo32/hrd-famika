@@ -156,6 +156,7 @@ function parseEmail(raw) {
 
   const attachments = content.attachments.map((a, i) => ({
     index: i, filename: a.filename, contentType: a.contentType, size: a.size, inline: a.inline,
+    data: a.data ? (a.encoding.includes("base64") ? a.data.replace(/\s/g, "") : Buffer.from(a.data).toString("base64")) : null,
   }));
 
   return {
@@ -184,7 +185,7 @@ function imapConnect(server, port, email, password) {
           tag++; let buf = ""; const t = `A${tag}`;
           dataHandler = (ch) => { buf += ch; if (buf.match(new RegExp(`^${t} (OK|NO|BAD)`, "m"))) { dataHandler = null; res(buf); } };
           conn.write(`${t} ${c}\r\n`);
-          setTimeout(() => { if (dataHandler) { dataHandler = null; res(buf); } }, 15000);
+          setTimeout(() => { if (dataHandler) { dataHandler = null; res(buf); } }, 45000);
         });
         cmd(`LOGIN ${email} ${password}`).then((r) => {
           if (r.match(/^A\d+ (NO|BAD)/m)) { conn.destroy(); reject(new Error("Login failed")); }

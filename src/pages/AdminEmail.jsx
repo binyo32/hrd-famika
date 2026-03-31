@@ -534,9 +534,19 @@ function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread,
 
 /* ─── Folder Sidebar ─── */
 
+const DEFAULT_FOLDERS = [
+  { name: "INBOX", total: 0, unseen: 0 },
+  { name: "INBOX.Sent", total: 0, unseen: 0 },
+  { name: "INBOX.Drafts", total: 0, unseen: 0 },
+  { name: "INBOX.spam", total: 0, unseen: 0 },
+  { name: "INBOX.Trash", total: 0, unseen: 0 },
+  { name: "INBOX.Archive", total: 0, unseen: 0 },
+];
+
 function FolderSidebar({ folders, activeFolder, onSelect, config }) {
-  const sorted = [...folders].sort((a, b) => getFolderInfo(a.name).order - getFolderInfo(b.name).order);
-  const totalUnread = folders.reduce((sum, f) => sum + (f.name === "INBOX" ? f.unseen : 0), 0);
+  const displayFolders = folders.length > 0 ? folders : DEFAULT_FOLDERS;
+  const sorted = [...displayFolders].sort((a, b) => getFolderInfo(a.name).order - getFolderInfo(b.name).order);
+  const totalUnread = displayFolders.reduce((sum, f) => sum + (f.name === "INBOX" ? f.unseen : 0), 0);
 
   return (
     <div className="space-y-4">
@@ -775,9 +785,16 @@ export default function AdminEmail() {
 
   const downloadAttachment = async (index, filename, contentType) => {
     try {
-      const r = await api("attachment", { uid: readMeta?.uid, index, folder: readMeta?.folder });
-      if (r.data) {
-        const byteChars = atob(r.data);
+      // Try to get data from readData first (included in read response)
+      const att = readData?.attachments?.find(a => a.index === index);
+      let b64 = att?.data;
+      // Fallback: fetch from server
+      if (!b64) {
+        const r = await api("attachment", { uid: readMeta?.uid, index, folder: readMeta?.folder });
+        b64 = r.data;
+      }
+      if (b64) {
+        const byteChars = atob(b64);
         const byteArrays = [];
         for (let off = 0; off < byteChars.length; off += 1024) {
           const slice = byteChars.slice(off, off + 1024);
@@ -911,7 +928,7 @@ export default function AdminEmail() {
 
   return (
     <Layout>
-      <div className="max-w-6xl mx-auto flex gap-5">
+      <div className="max-w-6xl mx-auto flex gap-3 lg:gap-4">
         {/* ── Desktop Sidebar ── */}
         <aside className="hidden md:block w-52 flex-shrink-0 space-y-3">
           <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
