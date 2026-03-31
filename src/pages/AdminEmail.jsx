@@ -9,6 +9,7 @@ import {
   Eye, EyeOff, CheckCircle, XCircle, PenSquare, X, LogOut, Search,
   Trash2, MailOpen, Archive, FileText, AlertTriangle, Bell, Folder,
   ChevronDown, Star, Reply, Check, MoreVertical, Share2, Paperclip, Download,
+  Bold, Italic, Underline, List, ListOrdered, Link2, Image, Plus, Volume2, GripVertical,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
@@ -104,6 +105,41 @@ function getFileIcon(contentType) {
   if (contentType.startsWith("video/")) return "🎬";
   if (contentType.startsWith("audio/")) return "🎵";
   return "📎";
+}
+
+/* ─── Notification Sound ─── */
+
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(830, ctx.currentTime);
+    osc.frequency.setValueAtTime(990, ctx.currentTime + 0.08);
+    osc.frequency.setValueAtTime(830, ctx.currentTime + 0.16);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+  } catch {}
+}
+
+function showDesktopNotification(count) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    const n = new Notification("Famika Mail", {
+      body: `${count} email baru diterima`,
+      icon: "/favicon.ico",
+      silent: true,
+    });
+    setTimeout(() => n.close(), 5000);
+  }
+  playNotificationSound();
+}
+
+function htmlToPlainText(html) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || "";
 }
 
 /* ─── API Hook ─── */
@@ -321,26 +357,141 @@ function EmailSetup({ onDone, api }) {
 
 /* ─── Compose Dialog ─── */
 
-function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forwardData }) {
+function ContactAutocomplete({ value, onChange, placeholder, contacts }) {
+  const [query, setQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef(null);
+
+  // Parse what's after the last comma to use as search query
+  const parts = value.split(",");
+  const lastPart = (parts[parts.length - 1] || "").trim();
+
+  const filtered = lastPart.length >= 2
+    ? contacts.filter((c) =>
+        c.name?.toLowerCase().includes(lastPart.toLowerCase()) ||
+        c.email?.toLowerCase().includes(lastPart.toLowerCase())
+      ).slice(0, 6)
+    : [];
+
+  const selectContact = (email) => {
+    const before = parts.slice(0, -1).map((p) => p.trim()).filter(Boolean);
+    before.push(email);
+    onChange(before.join(", ") + (before.length ? "" : ""));
+    setShowSuggestions(false);
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="relative flex-1">
+      <Input
+        ref={inputRef}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setShowSuggestions(true); }}
+        onFocus={() => setShowSuggestions(true)}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+        className="text-sm h-9"
+      />
+      {showSuggestions && filtered.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-card border rounded-lg shadow-xl z-30 py-1 max-h-48 overflow-y-auto">
+          {filtered.map((c, i) => (
+            <button key={i} onMouseDown={() => selectContact(c.email)}
+              className="w-full text-left px-3 py-2 hover:bg-muted flex items-center gap-2.5 text-sm">
+              <div className={`h-7 w-7 rounded-full bg-gradient-to-br ${getGradient(c.name)} flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0`}>
+                {getInitial(c.name)}
+              </div>
+              <div className="min-w-0">
+                <p className="font-medium text-xs truncate">{c.name}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{c.email}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forwardData, contacts }) {
   const [to, setTo] = useState(replyTo?.email || "");
   const [subject, setSubject] = useState(
     replyTo ? `Re: ${replyTo.subject?.replace(/^Re:\s*/i, "")}` :
     forwardData ? `Fwd: ${forwardData.subject}` : ""
   );
-  const [body, setBody] = useState(forwardData ? `\n\n---------- Forwarded message ----------\nFrom: ${forwardData.from}\nDate: ${forwardData.date}\nSubject: ${forwardData.subject}\n\n${forwardData.body}` : "");
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [cc, setCc] = useState("");
   const [bcc, setBcc] = useState("");
+  const [files, setFiles] = useState([]);
+  const editorRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Set initial content for forward
+  useEffect(() => {
+    if (editorRef.current && forwardData) {
+      editorRef.current.innerHTML = `<br><br><div style="border-left:2px solid #ccc;padding-left:12px;color:#666">---------- Forwarded message ----------<br>From: ${forwardData.from}<br>Date: ${forwardData.date}<br>Subject: ${forwardData.subject}<br><br>${forwardData.body.replace(/\n/g, "<br>")}</div>`;
+    }
+  }, [forwardData]);
+
+  const execCmd = (cmd, val = null) => {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, val);
+  };
+
+  const handleLink = () => {
+    const url = prompt("URL:");
+    if (url) execCmd("createLink", url);
+  };
+
+  const handleImage = () => {
+    const url = prompt("URL gambar:");
+    if (url) execCmd("insertImage", url);
+  };
+
+  const handleFileSelect = (e) => {
+    for (const file of e.target.files) {
+      if (file.size > 10 * 1024 * 1024) { alert(`${file.name} terlalu besar (max 10MB)`); continue; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFiles((prev) => [...prev, {
+          filename: file.name, contentType: file.type || "application/octet-stream",
+          size: file.size, data: reader.result.split(",")[1],
+        }]);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = "";
+  };
+
+  const removeFile = (idx) => setFiles((prev) => prev.filter((_, i) => i !== idx));
+
+  const handleSubmit = () => {
+    const htmlContent = editorRef.current?.innerHTML || "";
+    const plainText = htmlToPlainText(htmlContent);
+    if (!to || !subject || (!plainText.trim() && !htmlContent.trim())) return;
+    onSend({
+      to, subject, body: plainText, html: htmlContent,
+      cc: cc || undefined, bcc: bcc || undefined,
+      attachments: files.length ? files : undefined,
+    });
+  };
+
+  const TB = [
+    { icon: Bold, cmd: () => execCmd("bold"), tip: "Bold" },
+    { icon: Italic, cmd: () => execCmd("italic"), tip: "Italic" },
+    { icon: Underline, cmd: () => execCmd("underline"), tip: "Underline" },
+    null, // separator
+    { icon: List, cmd: () => execCmd("insertUnorderedList"), tip: "Bullet list" },
+    { icon: ListOrdered, cmd: () => execCmd("insertOrderedList"), tip: "Numbered list" },
+    null,
+    { icon: Link2, cmd: handleLink, tip: "Link" },
+    { icon: Image, cmd: handleImage, tip: "Gambar dari URL" },
+  ];
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <motion.div
-        initial={{ y: "100%", opacity: 0.5 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: "100%", opacity: 0 }}
+      <motion.div initial={{ y: "100%", opacity: 0.5 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="relative bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
-      >
+        className="relative bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
         {sendSuccess && <SendSuccessOverlay />}
 
         {/* Header */}
@@ -356,37 +507,84 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
           </button>
         </div>
 
-        {/* Form */}
-        <div className="p-4 space-y-2.5 max-h-[60vh] overflow-y-auto">
+        {/* Recipients */}
+        <div className="px-4 pt-3 space-y-2">
           <div className="flex items-center gap-2">
-            <Input placeholder="Kepada" value={to} onChange={(e) => setTo(e.target.value)} className="text-sm h-9 flex-1" />
+            <span className="text-xs text-muted-foreground w-8">To</span>
+            <ContactAutocomplete value={to} onChange={setTo} placeholder="Kepada" contacts={contacts} />
             {!showCcBcc && (
-              <button onClick={() => setShowCcBcc(true)} className="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap px-2">
-                Cc/Bcc
-              </button>
+              <button onClick={() => setShowCcBcc(true)} className="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap px-2">Cc/Bcc</button>
             )}
           </div>
           <AnimatePresence>
             {showCcBcc && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-2 overflow-hidden">
-                <Input placeholder="Cc (pisah dengan koma)" value={cc} onChange={(e) => setCc(e.target.value)} className="text-sm h-9" />
-                <Input placeholder="Bcc (pisah dengan koma)" value={bcc} onChange={(e) => setBcc(e.target.value)} className="text-sm h-9" />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-8">Cc</span>
+                  <ContactAutocomplete value={cc} onChange={setCc} placeholder="Cc" contacts={contacts} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-8">Bcc</span>
+                  <ContactAutocomplete value={bcc} onChange={setBcc} placeholder="Bcc" contacts={contacts} />
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
-          <Input placeholder="Subjek" value={subject} onChange={(e) => setSubject(e.target.value)} className="text-sm h-9" />
-          <Textarea placeholder="Tulis email..." rows={12} value={body} onChange={(e) => setBody(e.target.value)} className="resize-none text-sm leading-relaxed" />
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground w-8"></span>
+            <Input placeholder="Subjek" value={subject} onChange={(e) => setSubject(e.target.value)} className="text-sm h-9 flex-1" />
+          </div>
         </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-0.5 px-4 py-2 border-b border-t mt-2">
+          {TB.map((t, i) => t === null ? (
+            <div key={i} className="w-px h-5 bg-border mx-1" />
+          ) : (
+            <button key={i} onClick={t.cmd} title={t.tip}
+              className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+              <t.icon className="h-4 w-4" />
+            </button>
+          ))}
+          <div className="w-px h-5 bg-border mx-1" />
+          <button onClick={() => fileInputRef.current?.click()} title="Lampirkan file"
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+            <Paperclip className="h-4 w-4" />
+          </button>
+          <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
+        </div>
+
+        {/* Rich Text Editor */}
+        <div className="px-4 max-h-[40vh] overflow-y-auto">
+          <div ref={editorRef} contentEditable suppressContentEditableWarning
+            className="min-h-[180px] py-3 text-sm leading-relaxed outline-none focus:outline-none [&_a]:text-blue-500 [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground"
+            data-placeholder="Tulis email..."
+            style={{ minHeight: "180px" }}
+          />
+        </div>
+
+        {/* Attached Files */}
+        {files.length > 0 && (
+          <div className="px-4 py-2 border-t flex flex-wrap gap-1.5">
+            {files.map((f, i) => (
+              <div key={i} className="flex items-center gap-1.5 bg-muted/60 rounded-lg px-2.5 py-1.5 text-xs">
+                <span>{getFileIcon(f.contentType)}</span>
+                <span className="truncate max-w-[120px] font-medium">{f.filename}</span>
+                <span className="text-muted-foreground">{formatSize(f.size)}</span>
+                <button onClick={() => removeFile(i)} className="text-muted-foreground hover:text-red-500 ml-0.5"><X className="h-3 w-3" /></button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex justify-between items-center px-4 py-3 border-t bg-muted/20">
-          <Button variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground">Batal</Button>
-          <Button
-            size="sm"
-            onClick={() => onSend({ to, subject, body, cc: cc || undefined, bcc: bcc || undefined })}
-            disabled={!to || !subject || !body || sending || sendSuccess}
-            className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg shadow-blue-500/20 px-6"
-          >
+          <div className="flex gap-1">
+            <Button variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground">Batal</Button>
+          </div>
+          <Button size="sm" onClick={handleSubmit}
+            disabled={!to || !subject || sending || sendSuccess}
+            className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg shadow-blue-500/20 px-6">
             {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
             {sending ? "Mengirim..." : "Kirim"}
           </Button>
@@ -551,7 +749,7 @@ const DEFAULT_FOLDERS = [
   { name: "INBOX.Archive", total: 0, unseen: 0 },
 ];
 
-function FolderSidebar({ folders, activeFolder, onSelect, config }) {
+function FolderSidebar({ folders, activeFolder, onSelect, config, dragOverFolder, onDragOver, onDragLeave, onDrop }) {
   const displayFolders = folders.length > 0 ? folders : DEFAULT_FOLDERS;
   const sorted = [...displayFolders].sort((a, b) => getFolderInfo(a.name).order - getFolderInfo(b.name).order);
   const totalUnread = displayFolders.reduce((sum, f) => sum + (f.name === "INBOX" ? f.unseen : 0), 0);
@@ -584,8 +782,13 @@ function FolderSidebar({ folders, activeFolder, onSelect, config }) {
               whileHover={{ x: 2 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => onSelect(f.name)}
+              onDragOver={(e) => { e.preventDefault(); onDragOver?.(f.name); }}
+              onDragLeave={() => onDragLeave?.()}
+              onDrop={(e) => { e.preventDefault(); onDrop?.(e, f.name); }}
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${
-                active
+                dragOverFolder === f.name
+                  ? "bg-primary/20 text-primary ring-2 ring-primary/40 font-semibold"
+                  : active
                   ? "bg-primary/10 text-primary font-semibold shadow-sm"
                   : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
               }`}
@@ -719,6 +922,8 @@ export default function AdminEmail() {
   const [selectedUids, setSelectedUids] = useState(new Set());
   const [deletingUids, setDeletingUids] = useState(new Set());
   const [toasts, setToasts] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [dragOverFolder, setDragOverFolder] = useState(null);
   const prevTotalRef = useRef(0);
   const loadParamsRef = useRef({ folder: "INBOX", searchQuery: "", page: 1 });
 
@@ -751,6 +956,7 @@ export default function AdminEmail() {
         const n = r.total - prevTotalRef.current;
         setNewMailCount(n);
         showToast(`${n} email baru diterima`, "info");
+        showDesktopNotification(n);
       }
       prevTotalRef.current = r.total || 0;
       setInbox(r);
@@ -760,6 +966,17 @@ export default function AdminEmail() {
   }, [api, folder, searchQuery, showToast]);
 
   useEffect(() => { if (config) { loadFolders(); loadInbox(); } }, [config]); // eslint-disable-line
+
+  // Request notification permission + load contacts
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    (async () => {
+      try {
+        const { data } = await supabase.from("employees").select("name, email").not("email", "is", null).neq("email", "").order("name").limit(500);
+        if (data) setContacts(data.filter((c) => c.email));
+      } catch {}
+    })();
+  }, []);
   useEffect(() => { if (config) { prevTotalRef.current = 0; setNewMailCount(0); setSelectedUids(new Set()); loadInbox(1); } }, [folder, searchQuery]); // eslint-disable-line
 
   // Auto-refresh 30s
@@ -775,6 +992,7 @@ export default function AdminEmail() {
           const n = r.total - prevTotalRef.current;
           setNewMailCount(n);
           showToast(`${n} email baru diterima`, "info");
+        showDesktopNotification(n);
         }
         prevTotalRef.current = r.total || 0;
         setInbox(r);
@@ -960,7 +1178,23 @@ export default function AdminEmail() {
               <PenSquare className="h-4 w-4" /> Tulis Email
             </Button>
           </motion.div>
-          <FolderSidebar folders={folders} activeFolder={folder} onSelect={switchFolder} config={config} />
+          <FolderSidebar folders={folders} activeFolder={folder} onSelect={switchFolder} config={config}
+            dragOverFolder={dragOverFolder}
+            onDragOver={(name) => setDragOverFolder(name)}
+            onDragLeave={() => setDragOverFolder(null)}
+            onDrop={(e, destFolder) => {
+              try {
+                const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                if (data.uid && destFolder !== folder) {
+                  api("move", { uid: data.uid, folder, destination: destFolder }).then(() => {
+                    showToast(`Email dipindahkan ke ${getFolderInfo(destFolder).label}`);
+                    loadInbox(page); loadFolders();
+                  });
+                }
+              } catch {}
+              setDragOverFolder(null);
+            }}
+          />
         </aside>
 
         {/* ── Main Content ── */}
@@ -1106,6 +1340,8 @@ export default function AdminEmail() {
                             className={`transition-all duration-300 ${isDeleting ? "opacity-0 -translate-x-12 max-h-0 overflow-hidden" : ""}`}
                           >
                             <div
+                              draggable
+                              onDragStart={(e) => { e.dataTransfer.setData("text/plain", JSON.stringify({ uid: msg.uid })); e.dataTransfer.effectAllowed = "move"; }}
                               onClick={() => !isReading && !isDeleting && readEmail(msg)}
                               className={`group relative flex items-center gap-3 px-4 py-3.5 border-b border-border/30 transition-all cursor-pointer
                                 ${!msg.seen ? "bg-primary/[0.03]" : ""}
@@ -1223,6 +1459,7 @@ export default function AdminEmail() {
             sendSuccess={sendSuccess}
             replyTo={replyTo}
             forwardData={forwardData}
+            contacts={contacts}
           />
         )}
       </AnimatePresence>

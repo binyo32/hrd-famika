@@ -322,12 +322,59 @@ async function handleAttachment(p) {
   } catch (e) { imap.close(); throw e; }
 }
 
-async function handleSend(p) {
-  // Build the full RFC822 message
+function buildMimeMessage(p) {
   const date = new Date().toUTCString();
-  let rawMsg = `From: ${p.email}\r\nTo: ${p.to}\r\n`;
-  if (p.cc) rawMsg += `Cc: ${p.cc}\r\n`;
-  rawMsg += `Subject: ${p.subject}\r\nContent-Type: text/plain; charset=UTF-8\r\nMIME-Version: 1.0\r\nDate: ${date}\r\n\r\n${p.body}`;
+  const hasAttachments = p.attachments && p.attachments.length > 0;
+  const isHtml = p.html;
+  const boundary = `----=_Part_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const altBoundary = `----=_Alt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  let msg = `From: ${p.email}\r\nTo: ${p.to}\r\n`;
+  if (p.cc) msg += `Cc: ${p.cc}\r\n`;
+  msg += `Subject: ${p.subject}\r\nMIME-Version: 1.0\r\nDate: ${date}\r\n`;
+
+  if (!hasAttachments && !isHtml) {
+    // Plain text only
+    msg += `Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+    msg += Buffer.from(p.body, "utf-8").toString("base64").match(/.{1,76}/g).join("\r\n");
+  } else if (!hasAttachments && isHtml) {
+    // HTML + plain text fallback (multipart/alternative)
+    msg += `Content-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n`;
+    msg += `--${altBoundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+    msg += Buffer.from(p.body, "utf-8").toString("base64").match(/.{1,76}/g).join("\r\n");
+    msg += `\r\n--${altBoundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+    msg += Buffer.from(p.html, "utf-8").toString("base64").match(/.{1,76}/g).join("\r\n");
+    msg += `\r\n--${altBoundary}--`;
+  } else {
+    // With attachments (multipart/mixed)
+    msg += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n`;
+    // Body part
+    if (isHtml) {
+      msg += `--${boundary}\r\nContent-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n`;
+      msg += `--${altBoundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+      msg += Buffer.from(p.body, "utf-8").toString("base64").match(/.{1,76}/g).join("\r\n");
+      msg += `\r\n--${altBoundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+      msg += Buffer.from(p.html, "utf-8").toString("base64").match(/.{1,76}/g).join("\r\n");
+      msg += `\r\n--${altBoundary}--`;
+    } else {
+      msg += `--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+      msg += Buffer.from(p.body, "utf-8").toString("base64").match(/.{1,76}/g).join("\r\n");
+    }
+    // Attachment parts
+    for (const att of p.attachments) {
+      const ct = att.contentType || "application/octet-stream";
+      const fn = att.filename || "file";
+      const data = att.data; // already base64
+      msg += `\r\n--${boundary}\r\nContent-Type: ${ct}; name="${fn}"\r\nContent-Disposition: attachment; filename="${fn}"\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+      msg += data.match(/.{1,76}/g).join("\r\n");
+    }
+    msg += `\r\n--${boundary}--`;
+  }
+  return msg;
+}
+
+async function handleSend(p) {
+  const rawMsg = buildMimeMessage(p);
 
   // 1) Send via SMTP
   await new Promise((resolve, reject) => {
