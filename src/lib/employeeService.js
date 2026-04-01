@@ -98,13 +98,16 @@ export const addEmployee = async (employee, adminUser) => {
     body: {
       mode: "create",
       payload,
-       email: employee.email,
+      email: employee.email,
     },
   });
 
   if (error) {
     console.error("Edge create error:", error);
-    throw error;
+    throw new Error(data?.error || error.message || "Gagal menyimpan data karyawan");
+  }
+  if (data?.error) {
+    throw new Error(data.error);
   }
 
   if (adminUser) {
@@ -144,7 +147,10 @@ export const updateEmployee = async (
 
   if (error) {
     console.error("Edge update error:", error);
-    throw error;
+    throw new Error(data?.error || error.message || "Gagal update data karyawan");
+  }
+  if (data?.error) {
+    throw new Error(data.error);
   }
 
   if (adminUser) {

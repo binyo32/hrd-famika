@@ -30,8 +30,20 @@ serve(async (req) => {
     // ── CREATE EMPLOYEE ──
     if (mode === "create") {
       const password = payload.password || "karyawan123";
-      // Keep password in employees table (legacy field, NOT NULL constraint)
       payload.password = password;
+
+      // Check duplicate NIK
+      if (payload.nik) {
+        const { data: existNik } = await admin.from("employees").select("id").eq("nik", payload.nik).maybeSingle();
+        if (existNik) return json({ error: `NIK ${payload.nik} sudah terdaftar` }, 400);
+      }
+
+      // Check duplicate email
+      const cleanEmail = email?.trim();
+      if (cleanEmail) {
+        const { data: existEmail } = await admin.from("employees").select("id").eq("email", cleanEmail).maybeSingle();
+        if (existEmail) return json({ error: `Email ${cleanEmail} sudah terdaftar` }, 400);
+      }
 
       // 1) Insert employee record
       const { data: emp, error: empErr } = await admin
@@ -43,47 +55,29 @@ serve(async (req) => {
       if (empErr) return json({ error: empErr.message }, 400);
 
       // 2) If email provided, create auth account + link profile
-      if (email && email.trim()) {
+      if (cleanEmail) {
         try {
-          // Create auth user
           const { data: authData, error: authErr } = await admin.auth.admin.createUser({
-            email: email.trim(),
+            email: cleanEmail,
             password,
-            email_confirm: true, // Auto-confirm email
+            email_confirm: true,
           });
 
           if (authErr) {
-            // Auth failed but employee was created - just log warning
             console.warn("Auth create failed:", authErr.message);
-            // Update employee with email anyway
-            await admin.from("employees").update({ email: email.trim() }).eq("id", emp.id);
-            return json({ employee: emp, warning: "Karyawan dibuat tapi akun login gagal: " + authErr.message });
+            await admin.from("employees").update({ email: cleanEmail }).eq("id", emp.id);
+            return json({ employee: emp, warning: "Karyawan dibuat, akun login gagal: " + authErr.message });
           }
 
-          // Wait for trigger to create profile
           await new Promise((r) => setTimeout(r, 500));
 
-          // Update profile: set role + link to employee
-          await admin
-            .from("profiles")
-            .update({
-              role: "employee",
-              employee_id: emp.id,
-            })
-            .eq("id", authData.user.id);
+          await admin.from("profiles").update({ role: "employee", employee_id: emp.id }).eq("id", authData.user.id);
+          await admin.from("employees").update({ email: cleanEmail, migrated: true }).eq("id", emp.id);
 
-          // Update employee with email + migrated flag
-          await admin
-            .from("employees")
-            .update({
-              email: email.trim(),
-              migrated: true,
-            })
-            .eq("id", emp.id);
-
-        } catch (e) {
+        } catch (e: any) {
           console.warn("Auth setup error:", e);
-          await admin.from("employees").update({ email: email.trim() }).eq("id", emp.id);
+          await admin.from("employees").update({ email: cleanEmail }).eq("id", emp.id);
+          return json({ employee: emp, warning: "Karyawan dibuat, akun login gagal: " + e.message });
         }
       }
 
