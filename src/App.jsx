@@ -33,6 +33,9 @@ import ForbiddenPage from "./pages/ForbiddenPage";
 import AdminMessages from "./pages/AdminMessages";
 import AdminAiChat from "./pages/AdminAiChat";
 import AdminEmail from "./pages/AdminEmail";
+import FaceSetup from "./pages/FaceSetup";
+import KioskAttendance from "./pages/KioskAttendance";
+import AdminFaceManagement from "./pages/AdminFaceManagement";
 
 function AppContent() {
   const { successModalProps, showSuccessModal, hideSuccessModal } =
@@ -210,6 +213,23 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/face-setup"
+            element={
+              <ProtectedRoute requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
+                <FaceSetup />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/face-management"
+            element={
+              <ProtectedRoute requiredRoles={["Super Admin"]}>
+                <AdminFaceManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/kiosk" element={<KioskAttendance />} />
           <Route path="/403" element={<ForbiddenPage />} />
         </Routes>
         <Toaster />
