@@ -207,21 +207,51 @@ export default function KioskAttendance() {
     try {
       const today = new Date().toISOString().split("T")[0];
       const now = new Date().toISOString();
+      const HADIR_UUID = "35d53578-19b6-434e-9be9-180834f5e44e";
+
+      // Capture photo from current video frame
+      let photoPath = null;
+      if (videoRef.current) {
+        try {
+          const c = document.createElement("canvas");
+          c.width = videoRef.current.videoWidth; c.height = videoRef.current.videoHeight;
+          const cx = c.getContext("2d");
+          cx.translate(c.width, 0); cx.scale(-1, 1);
+          cx.drawImage(videoRef.current, 0, 0);
+          const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.7));
+          const empName = (emp?.name || "unknown").toLowerCase().replace(/[^a-z0-9]/g, "-");
+          const timeStr = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }).replace(":", ".");
+          photoPath = `${today}/${empName}-kiosk-${timeStr}.jpg`;
+          await supabase.storage.from("photo.attendance").upload(photoPath, blob, { contentType: "image/jpeg" });
+        } catch {}
+      }
+
+      // Get kiosk location (one-time)
+      let loc = null;
+      try {
+        const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 3000 }));
+        loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, address: "Kiosk Auto Absen", timestamp: now };
+      } catch {}
+
       const { error } = await supabase.from("attendance_records").insert({
         employee_id: employeeId,
         attendance_date: today,
         check_in_time: now,
-        status_id: "H",
+        status_id: HADIR_UUID,
         project: "Auto Absen (Face Recognition)",
+        attachment: photoPath,
+        loc_checkin: loc,
+        notes: `Face Recognition (confidence: ${Math.round((1 - 0) * 100)}%)`,
       });
-      if (error) return;
+
+      if (error) { console.error("Check-in error:", error); return; }
 
       checkedInRef.current.add(employeeId);
       setRecentCheckin({ name: emp?.name, time: now });
       playSuccessSound();
       await loadTodayLog();
       setTimeout(() => setRecentCheckin(null), 4000);
-    } catch {}
+    } catch (e) { console.error("Check-in error:", e); }
   };
 
   const timeStr = currentTime.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
