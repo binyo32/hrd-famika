@@ -14,8 +14,8 @@ const FACEAPI_MODEL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1/model
 
 const STEPS = [
   { id: "front", label: "Lihat ke depan", icon: "😐", hint: "Pastikan wajah terlihat jelas" },
-  { id: "left", label: "Miringkan ke kiri", icon: "😏", hint: "← Sedikit saja ke kiri" },
-  { id: "right", label: "Miringkan ke kanan", icon: "😏", hint: "→ Sedikit saja ke kanan" },
+  { id: "left", label: "Miringkan ke kanan", icon: "😏", hint: "← Sedikit saja ke kanan" },
+  { id: "right", label: "Miringkan ke kiri", icon: "😏", hint: "→ Sedikit saja ke kiri" },
   { id: "blink", label: "Pejamkan mata", icon: "😌", hint: "Tutup kedua mata, tahan 1 detik" },
 ];
 
@@ -548,8 +548,8 @@ export default function FaceSetup() {
                 </div>
                 <div className="bg-muted/50 rounded-xl p-3 text-sm space-y-1">
                   <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah depan ✓</div>
-                  <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah kiri ✓</div>
                   <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah kanan ✓</div>
+                  <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah kiri ✓</div>
                   <div className="flex items-center gap-2 text-emerald-600"><Eye className="h-4 w-4" /> Liveness verified ✓</div>
                 </div>
                 <p className="text-xs text-muted-foreground">Sekarang kamu bisa absen otomatis lewat kamera kiosk.</p>
