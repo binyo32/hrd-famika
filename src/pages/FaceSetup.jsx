@@ -33,9 +33,9 @@ function getHeadPose(landmarks) {
   const faceRight = jaw[16];
   const faceWidth = faceRight.x - faceLeft.x;
   const nosePosRatio = (noseTip.x - faceLeft.x) / faceWidth;
-  // 0.5 = centered, lebih longgar supaya mudah terdeteksi
-  if (nosePosRatio < 0.44) return "right";
-  if (nosePosRatio > 0.56) return "left";
+  // 0.5 = centered, sangat longgar supaya mudah
+  if (nosePosRatio < 0.46) return "right";
+  if (nosePosRatio > 0.54) return "left";
   return "front";
 }
 
@@ -66,6 +66,10 @@ export default function FaceSetup() {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const runningRef = useRef(false);
+  // Refs for detection loop (closures don't see React state updates)
+  const stepRef = useRef(0);
+  const descriptorsRef = useRef([]);
+  const photosRef = useRef([]);
   const lastEarRef = useRef(1);
   const blinkDetectedRef = useRef(false);
   const capturedRef = useRef(new Set());
@@ -99,6 +103,9 @@ export default function FaceSetup() {
     setCompletedSteps([]);
     setDescriptors([]);
     setPhotos([]);
+    stepRef.current = 0;
+    descriptorsRef.current = [];
+    photosRef.current = [];
     capturedRef.current = new Set();
     blinkDetectedRef.current = false;
     try {
@@ -139,27 +146,22 @@ export default function FaceSetup() {
         ctx.beginPath(); ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2); ctx.fill();
       });
 
-      const step = STEPS[currentStep];
+      // Use ref for current step (closure-safe)
+      const si = stepRef.current;
+      const step = STEPS[si];
       if (!step) { /* all done */ }
       else if (step.id === "blink") {
-        // Blink detection via EAR
         const leftEye = landmarks.getLeftEye();
         const rightEye = landmarks.getRightEye();
         const ear = (getEAR(leftEye) + getEAR(rightEye)) / 2;
-        if (lastEarRef.current > 0.25 && ear < 0.20 && !blinkDetectedRef.current) {
+        if (lastEarRef.current > 0.25 && ear < 0.19 && !blinkDetectedRef.current) {
           blinkDetectedRef.current = true;
-          setBlinkCount(c => c + 1);
           playBeep();
-          // Capture on blink
           captureFrame(video, descriptor);
           advanceStep();
         }
         lastEarRef.current = ear;
-        // Draw EAR indicator
-        ctx.fillStyle = ear < 0.20 ? "#ef4444" : "#22c55e";
-        ctx.fillRect(box.x, box.y - 20, box.width * Math.min(ear / 0.35, 1), 8);
       } else {
-        // Head pose detection
         const pose = getHeadPose(landmarks);
         if (pose === step.id && !capturedRef.current.has(step.id)) {
           capturedRef.current.add(step.id);
@@ -167,12 +169,6 @@ export default function FaceSetup() {
           captureFrame(video, descriptor);
           advanceStep();
         }
-
-        // Draw pose indicator
-        const poseColor = pose === step.id ? "#22c55e" : "#f59e0b";
-        ctx.fillStyle = poseColor;
-        ctx.font = "14px sans-serif";
-        ctx.fillText(`Pose: ${pose}`, box.x, box.y - 8);
       }
     } else {
       setFaceDetected(false);
@@ -187,39 +183,47 @@ export default function FaceSetup() {
     const cx = c.getContext("2d");
     cx.translate(c.width, 0); cx.scale(-1, 1);
     cx.drawImage(video, 0, 0);
-    setPhotos(prev => [...prev, c.toDataURL("image/jpeg", 0.8)]);
-    setDescriptors(prev => [...prev, Array.from(descriptor)]);
+    const photoUrl = c.toDataURL("image/jpeg", 0.8);
+    const descArr = Array.from(descriptor);
+    photosRef.current = [...photosRef.current, photoUrl];
+    descriptorsRef.current = [...descriptorsRef.current, descArr];
+    setPhotos(photosRef.current);
+    setDescriptors(descriptorsRef.current);
   };
 
   const advanceStep = () => {
-    setCompletedSteps(prev => [...prev, STEPS[currentStep].id]);
-    const nextStep = currentStep + 1;
+    const si = stepRef.current;
+    setCompletedSteps(prev => [...prev, STEPS[si].id]);
+    const nextStep = si + 1;
+    stepRef.current = nextStep;
+    setCurrentStep(nextStep);
+    blinkDetectedRef.current = false;
     if (nextStep >= STEPS.length) {
-      // All steps done - auto save
       runningRef.current = false;
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      setPhase("saving");
-    } else {
-      setCurrentStep(nextStep);
-      blinkDetectedRef.current = false;
+      // Small delay to let state sync before saving
+      setTimeout(() => setPhase("saving"), 300);
     }
   };
 
   // Auto-save when phase becomes "saving"
   useEffect(() => {
-    if (phase !== "saving" || !employee || descriptors.length < 3) return;
+    if (phase !== "saving" || !employee) return;
+    const savedPhotos = photosRef.current;
+    const savedDescriptors = descriptorsRef.current;
+    if (savedDescriptors.length < 3) return;
     (async () => {
       try {
         const photoPaths = [];
-        for (let i = 0; i < photos.length; i++) {
-          const blob = await (await fetch(photos[i])).blob();
+        for (let i = 0; i < savedPhotos.length; i++) {
+          const blob = await (await fetch(savedPhotos[i])).blob();
           const path = `face-register/${employee.id}/${Date.now()}-${i}.jpg`;
           await supabase.storage.from("photo.attendance").upload(path, blob, { contentType: "image/jpeg" });
           photoPaths.push(path);
         }
         const { error } = await supabase.from("employee_face_descriptors").insert({
           employee_id: employee.id,
-          descriptors,
+          descriptors: savedDescriptors,
           photos: photoPaths,
         });
         if (error) throw error;
