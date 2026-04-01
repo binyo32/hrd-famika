@@ -1143,8 +1143,9 @@ export default function AdminEmail() {
   }, [config, readData, api, showToast]);
 
   const readEmail = async (msg) => {
-    // Instantly show viewer with metadata from inbox list
-    setReadMeta({ uid: msg.uid, folder });
+    // Use actual folder (for "ALL" virtual folder, msg.folder has the real IMAP folder)
+    const actualFolder = msg.folder || folder;
+    setReadMeta({ uid: msg.uid, folder: actualFolder });
     setReadData({
       subject: decodeSubject(msg.subject),
       from: msg.from || "",
@@ -1156,8 +1157,7 @@ export default function AdminEmail() {
       attachments: [],
       _loading: true,
     });
-    // Load full email in background
-    const r = await api("read", { uid: msg.uid, msgNum: msg.num, folder });
+    const r = await api("read", { uid: msg.uid, msgNum: msg.num, folder: actualFolder });
     if (r.parsed) setReadData(r.parsed);
     else setReadData((prev) => prev ? { ...prev, _loading: false, text: "(Gagal memuat email)" } : prev);
   };
@@ -1212,11 +1212,20 @@ export default function AdminEmail() {
     }
   };
 
+  // Get actual IMAP folder for a message (handles "ALL" virtual folder)
+  const getMsgFolder = (uid) => {
+    if (readMeta?.uid === uid) return readMeta.folder;
+    const msg = inbox?.messages?.find((m) => m.uid === uid);
+    return msg?.folder || folder;
+  };
+  const getActiveFolder = () => folder === "ALL" ? "INBOX" : folder;
+
   const deleteEmail = async (uid) => {
+    const f = getMsgFolder(uid);
     setDeletingUids((prev) => new Set([...prev, uid]));
     try {
-      await api("delete", { uid, folder });
-      showToast(folder.toLowerCase().includes("trash") ? "Email dihapus permanen" : "Email dipindahkan ke Trash");
+      await api("delete", { uid, folder: f });
+      showToast(f.toLowerCase().includes("trash") ? "Email dihapus permanen" : "Email dipindahkan ke Trash");
     } catch { showToast("Gagal menghapus", "error"); }
     setTimeout(() => {
       setDeletingUids(new Set());
@@ -1230,7 +1239,7 @@ export default function AdminEmail() {
     const uids = [...selectedUids];
     setDeletingUids(new Set(uids));
     try {
-      await api("delete", { uids, folder });
+      await api("delete", { uids, folder: getActiveFolder() });
       showToast(`${uids.length} email dihapus`);
     } catch { showToast("Gagal menghapus", "error"); }
     setTimeout(() => {
@@ -1242,26 +1251,29 @@ export default function AdminEmail() {
   };
 
   const markEmail = async (uid, seen) => {
-    await api("mark", { uid, seen, folder });
+    const f = getMsgFolder(uid);
+    await api("mark", { uid, seen, folder: f });
     setInbox((prev) => prev ? { ...prev, messages: prev.messages.map((m) => m.uid === uid ? { ...m, seen } : m) } : prev);
   };
 
   const batchMark = async (seen) => {
     const uids = [...selectedUids];
-    await api("mark", { uids, seen, folder });
+    await api("mark", { uids, seen, folder: getActiveFolder() });
     setInbox((prev) => prev ? { ...prev, messages: prev.messages.map((m) => uids.includes(m.uid) ? { ...m, seen } : m) } : prev);
     setSelectedUids(new Set());
     showToast(seen ? "Ditandai sudah dibaca" : "Ditandai belum dibaca");
   };
 
   const toggleStar = async (uid, flagged) => {
-    await api("star", { uid, flagged, folder });
+    const f = getMsgFolder(uid);
+    await api("star", { uid, flagged, folder: f });
     setInbox((prev) => prev ? { ...prev, messages: prev.messages.map((m) => m.uid === uid ? { ...m, flagged } : m) } : prev);
   };
 
   const archiveEmail = async (uid) => {
+    const f = getMsgFolder(uid);
     try {
-      await api("move", { uid, folder, destination: "INBOX.Archive" });
+      await api("move", { uid, folder: f, destination: "INBOX.Archive" });
       showToast("Email diarsipkan");
       if (readData) { setReadData(null); setReadMeta(null); }
       loadInbox(page);
@@ -1325,8 +1337,9 @@ export default function AdminEmail() {
             onDrop={(e, destFolder) => {
               try {
                 const data = JSON.parse(e.dataTransfer.getData("text/plain"));
-                if (data.uid && destFolder !== folder) {
-                  api("move", { uid: data.uid, folder, destination: destFolder }).then(() => {
+                if (data.uid) {
+                  const srcFolder = getMsgFolder(data.uid);
+                  api("move", { uid: data.uid, folder: srcFolder, destination: destFolder }).then(() => {
                     showToast(`Email dipindahkan ke ${getFolderInfo(destFolder).label}`);
                     loadInbox(page); loadFolders();
                   });
