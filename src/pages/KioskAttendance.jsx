@@ -78,8 +78,16 @@ export default function KioskAttendance() {
       const { data: faceData } = await supabase.from("employee_face_descriptors").select("employee_id, descriptors");
       if (!faceData?.length) { setStatus("error"); return; }
 
-      // Load ALL employee info (for today log names)
-      const { data: employees } = await supabase.from("employees").select("id, name, position, division");
+      // Load ALL employee info (Supabase default limit 1000, kita punya 2175+)
+      let employees = [];
+      let from = 0;
+      while (true) {
+        const { data } = await supabase.from("employees").select("id, name, position, division").range(from, from + 999);
+        if (!data?.length) break;
+        employees.push(...data);
+        if (data.length < 1000) break;
+        from += 1000;
+      }
       const empMap = {};
       employees?.forEach(e => { empMap[e.id] = e; });
       setEmployeeMap(empMap);
@@ -95,10 +103,20 @@ export default function KioskAttendance() {
       // Load today's attendance
       await loadTodayLog();
 
-      // Start camera
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 1280, height: 720 } });
+      // Start camera (mobile-friendly: try ideal first, fallback to basic)
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
       streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute("playsinline", "true");
+        videoRef.current.setAttribute("webkit-playsinline", "true");
+        try { await videoRef.current.play(); } catch { /* autoplay blocked, user will tap */ }
+      }
 
       setStatus("ready");
       setTimeout(() => startDetection(), 1000);
@@ -263,9 +281,11 @@ export default function KioskAttendance() {
       {/* Main content */}
       <div className="flex-1 flex flex-col md:flex-row gap-3 p-3 md:p-4 min-h-0 overflow-hidden">
         {/* Camera section */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <div className="relative bg-black rounded-2xl overflow-hidden aspect-[4/3] md:flex-1 md:aspect-auto">
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
+        <div className="md:flex-1 flex flex-col min-w-0 min-h-0">
+          <div className="relative bg-black rounded-2xl overflow-hidden aspect-square md:flex-1 md:aspect-auto">
+            <video ref={videoRef} autoPlay playsInline muted
+              onClick={(e) => { try { e.target.play(); } catch {} }}
+              className="w-full h-full object-cover scale-x-[-1]" />
 
             {/* Detection overlay */}
             <AnimatePresence>
