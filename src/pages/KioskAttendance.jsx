@@ -78,9 +78,8 @@ export default function KioskAttendance() {
       const { data: faceData } = await supabase.from("employee_face_descriptors").select("employee_id, descriptors");
       if (!faceData?.length) { setStatus("error"); return; }
 
-      // Load employee info
-      const empIds = faceData.map(f => f.employee_id);
-      const { data: employees } = await supabase.from("employees").select("id, name, position, division").in("id", empIds);
+      // Load ALL employee info (for today log names)
+      const { data: employees } = await supabase.from("employees").select("id, name, position, division");
       const empMap = {};
       employees?.forEach(e => { empMap[e.id] = e; });
       setEmployeeMap(empMap);
@@ -262,10 +261,10 @@ export default function KioskAttendance() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex gap-4 p-4 min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row gap-3 p-3 md:p-4 min-h-0 overflow-hidden">
         {/* Camera section */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="relative flex-1 bg-black rounded-2xl overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <div className="relative bg-black rounded-2xl overflow-hidden aspect-[4/3] md:flex-1 md:aspect-auto">
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
 
             {/* Detection overlay */}
@@ -315,11 +314,11 @@ export default function KioskAttendance() {
             </div>
           </div>
 
-          <p className="text-center text-white/30 text-sm mt-3">Arahkan wajah ke kamera untuk absen otomatis</p>
+          <p className="text-center text-white/30 text-xs mt-2 hidden md:block">Arahkan wajah ke kamera untuk absen otomatis</p>
         </div>
 
         {/* Today's log */}
-        <div className="w-80 flex-shrink-0 bg-white/5 rounded-2xl border border-white/10 flex flex-col overflow-hidden">
+        <div className="w-full md:w-72 lg:w-80 flex-shrink-0 bg-white/5 rounded-2xl border border-white/10 flex flex-col overflow-hidden max-h-[35vh] md:max-h-full">
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-white/50" />
@@ -329,7 +328,7 @@ export default function KioskAttendance() {
           </div>
           <div className="flex-1 overflow-y-auto">
             <AnimatePresence>
-              {todayLog.map((log, i) => {
+              {todayLog.slice(0, 20).map((log, i) => {
                 const emp = employeeMap[log.employee_id];
                 const time = new Date(log.check_in_time).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
                 return (
