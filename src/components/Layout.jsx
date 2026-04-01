@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-const getNavLinks = (user, activeRole) => {
+const getNavLinks = (user, activeRole, faceSetupEnabled = false) => {
   // ADMIN MODE (KHUSUS role Admin)
   if (user.role === "Admin" && activeRole === "admin") {
     return [
@@ -120,6 +120,10 @@ const getNavLinks = (user, activeRole) => {
     });
   }
 
+  if (faceSetupEnabled) {
+    links.push({ to: "/face-setup", icon: Camera, text: "Validasi Wajah" });
+  }
+
   return links;
 };
 
@@ -131,6 +135,7 @@ const Sidebar = ({
   onLogout,
   activeRole,
   setActiveRole,
+  faceSetupEnabled,
 }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -154,7 +159,7 @@ const Sidebar = ({
     navigate("/login");
   };
 
-  const navLinks = getNavLinks(user, activeRole);
+  const navLinks = getNavLinks(user, activeRole, faceSetupEnabled);
 
   const sidebarVariants = {
     open: { x: 0 },
@@ -472,6 +477,17 @@ const Layout = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [faceSetupEnabled, setFaceSetupEnabled] = useState(false);
+
+  // Fetch face_setup_enabled from mobile_settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.from("mobile_settings").select("face_setup_enabled").limit(1).single();
+        if (data) setFaceSetupEnabled(data.face_setup_enabled ?? false);
+      } catch {}
+    })();
+  }, []);
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -684,6 +700,7 @@ useEffect(() => {
         onLogout={handleLogout}
         activeRole={activeRole}
         setActiveRole={setActiveRole}
+        faceSetupEnabled={faceSetupEnabled}
       />
 
       <div
