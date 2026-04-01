@@ -73,6 +73,7 @@ export default function FaceSetup() {
   const lastEarRef = useRef(1);
   const blinkDetectedRef = useRef(false);
   const capturedRef = useRef(new Set());
+  const earHistoryRef = useRef([]);
 
   // Init: load models + check auth
   useEffect(() => {
@@ -108,6 +109,7 @@ export default function FaceSetup() {
     photosRef.current = [];
     capturedRef.current = new Set();
     blinkDetectedRef.current = false;
+    earHistoryRef.current = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
       streamRef.current = stream;
@@ -154,7 +156,14 @@ export default function FaceSetup() {
         const leftEye = landmarks.getLeftEye();
         const rightEye = landmarks.getRightEye();
         const ear = (getEAR(leftEye) + getEAR(rightEye)) / 2;
-        if (lastEarRef.current > 0.25 && ear < 0.19 && !blinkDetectedRef.current) {
+        // Adaptive blink detection: compare against running baseline
+        earHistoryRef.current.push(ear);
+        if (earHistoryRef.current.length > 20) earHistoryRef.current.shift();
+        const baseline = earHistoryRef.current.length > 5
+          ? earHistoryRef.current.slice(0, -3).reduce((a, b) => a + b, 0) / (earHistoryRef.current.length - 3)
+          : 0.3;
+        const isBlinking = ear < baseline * 0.60 && ear < 0.24;
+        if (isBlinking && !blinkDetectedRef.current) {
           blinkDetectedRef.current = true;
           playBeep();
           captureFrame(video, descriptor);
