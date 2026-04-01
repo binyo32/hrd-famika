@@ -92,24 +92,25 @@ serve(async (req) => {
       await sendTelegram(msg);
     }
 
-    // LOCATION UPDATE (update with changed loc_checkin or new location log)
-    if (type === "UPDATE" && record?.loc_checkin && old_record?.loc_checkin) {
-      const newLoc = typeof record.loc_checkin === "string" ? JSON.parse(record.loc_checkin) : record.loc_checkin;
-      const oldLoc = typeof old_record.loc_checkin === "string" ? JSON.parse(old_record.loc_checkin) : old_record.loc_checkin;
+    // LOCATION LOG (from attendance_location_logs table)
+    if (type === "INSERT" && record?.latitude && record?.longitude && record?.employee_id) {
+      // This is a location log entry, not attendance_records
+      if (!record.check_in_time) {
+        const time = record.recorded_at ? formatTime(record.recorded_at) : "";
+        const address = record.address || `${record.latitude}, ${record.longitude}`;
+        const activity = record.activity || "";
 
-      // Only notify if location actually changed significantly
-      if (newLoc.lat && oldLoc.lat) {
-        const dist = Math.abs(newLoc.lat - oldLoc.lat) + Math.abs(newLoc.lng - oldLoc.lng);
-        if (dist > 0.001) { // ~100m movement
-          const msg = [
-            "📍 <b>UPDATE LOKASI</b>",
-            "",
-            `👤 <b>${empName}</b>`,
-            `📍 ${newLoc.address || `${newLoc.lat}, ${newLoc.lng}`}`,
-          ].join("\n");
+        const msg = [
+          "📍 <b>UPDATE LOKASI</b>",
+          "",
+          `👤 <b>${empName}</b>`,
+          empPosition ? `💼 ${empPosition}` : "",
+          `📍 ${address}`,
+          activity ? `🏃 ${activity}` : "",
+          time ? `🕐 ${time} WIB` : "",
+        ].filter(Boolean).join("\n");
 
-          await sendTelegram(msg);
-        }
+        await sendTelegram(msg);
       }
     }
 
