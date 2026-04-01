@@ -1,171 +1,270 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Camera, CheckCircle, Loader2, RefreshCw, X, AlertTriangle } from "lucide-react";
+import { Camera, CheckCircle, Loader2, AlertTriangle, Eye, RotateCcw } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import * as faceapi from "@vladmandic/face-api";
 
 const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1/model";
 
-export default function FaceSetup() {
-  const [step, setStep] = useState("loading"); // loading, intro, camera, processing, done, already
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [photos, setPhotos] = useState([]);
-  const [descriptors, setDescriptors] = useState([]);
-  const [error, setError] = useState(null);
-  const [employee, setEmployee] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const canvasRef = useRef(null);
+const STEPS = [
+  { id: "front", label: "Lihat ke depan", icon: "😐" },
+  { id: "left", label: "Miringkan ke kiri", icon: "😏" },
+  { id: "right", label: "Miringkan ke kanan", icon: "😏" },
+  { id: "blink", label: "Kedipkan mata", icon: "😉" },
+];
 
-  // Load models + check auth
+// Eye Aspect Ratio for blink detection
+function getEAR(eye) {
+  const a = Math.hypot(eye[1].x - eye[5].x, eye[1].y - eye[5].y);
+  const b = Math.hypot(eye[2].x - eye[4].x, eye[2].y - eye[4].y);
+  const c = Math.hypot(eye[0].x - eye[3].x, eye[0].y - eye[3].y);
+  return (a + b) / (2 * c);
+}
+
+// Head pose from landmarks (nose vs face center)
+function getHeadPose(landmarks) {
+  const nose = landmarks.getNose();
+  const jaw = landmarks.getJawOutline();
+  const noseTip = nose[3]; // tip of nose
+  const faceLeft = jaw[0];
+  const faceRight = jaw[16];
+  const faceWidth = faceRight.x - faceLeft.x;
+  const nosePosRatio = (noseTip.x - faceLeft.x) / faceWidth;
+  // 0.5 = centered, <0.42 = looking right (from camera), >0.58 = looking left
+  if (nosePosRatio < 0.40) return "right";
+  if (nosePosRatio > 0.60) return "left";
+  return "front";
+}
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.setValueAtTime(1200, ctx.currentTime);
+    g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.15);
+  } catch {}
+}
+
+export default function FaceSetup() {
+  const [phase, setPhase] = useState("loading"); // loading, intro, camera, saving, done, already, error
+  const [employee, setEmployee] = useState(null);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [completedSteps, setCompletedSteps] = useState([]);
+  const [descriptors, setDescriptors] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [blinkCount, setBlinkCount] = useState(0);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const runningRef = useRef(false);
+  const lastEarRef = useRef(1);
+  const blinkDetectedRef = useRef(false);
+  const capturedRef = useRef(new Set());
+
+  // Init: load models + check auth
   useEffect(() => {
     (async () => {
       try {
-        // Get current user's employee info
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setError("Silakan login terlebih dahulu"); return; }
-
-        const { data: profile } = await supabase.from("profiles").select("employee_id, role").eq("id", user.id).single();
-        if (!profile?.employee_id) { setError("Akun tidak terhubung ke data karyawan"); return; }
-
+        if (!user) { setErrorMsg("Silakan login terlebih dahulu"); setPhase("error"); return; }
+        const { data: profile } = await supabase.from("profiles").select("employee_id").eq("id", user.id).single();
+        if (!profile?.employee_id) { setErrorMsg("Akun tidak terhubung ke data karyawan"); setPhase("error"); return; }
         const { data: emp } = await supabase.from("employees").select("id, name, position, division").eq("id", profile.employee_id).single();
         setEmployee(emp);
 
-        // Check if already registered
-        const { data: existing } = await supabase.from("employee_face_descriptors").select("id, validated_at").eq("employee_id", emp.id).single();
-        if (existing) { setStep("already"); return; }
+        const { data: existing } = await supabase.from("employee_face_descriptors").select("id").eq("employee_id", emp.id).single();
+        if (existing) { setPhase("already"); return; }
 
-        // Load face-api models
         await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
         await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-        setModelsLoaded(true);
-        setStep("intro");
-      } catch (e) {
-        setError("Gagal memuat: " + e.message);
-      }
+        setPhase("intro");
+      } catch (e) { setErrorMsg("Gagal memuat: " + e.message); setPhase("error"); }
     })();
-    return () => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+    return () => { runningRef.current = false; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
   }, []);
 
   const startCamera = async () => {
-    setStep("camera");
-    setPhotos([]);
+    setPhase("camera");
+    setCurrentStep(0);
+    setCompletedSteps([]);
     setDescriptors([]);
+    setPhotos([]);
+    capturedRef.current = new Set();
+    blinkDetectedRef.current = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
       streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
-    } catch {
-      setError("Tidak bisa mengakses kamera");
-    }
+      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
+      runningRef.current = true;
+      requestAnimationFrame(detectLoop);
+    } catch { setErrorMsg("Tidak bisa mengakses kamera"); setPhase("error"); }
   };
 
-  const capturePhoto = async () => {
-    if (!videoRef.current) return;
+  const detectLoop = async () => {
+    if (!runningRef.current || !videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
-    const canvas = document.createElement("canvas");
+    const canvas = canvasRef.current;
+
+    if (video.readyState < 2) { requestAnimationFrame(detectLoop); return; }
+
+    const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+    const ctx = canvas.getContext("2d");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1); // Mirror
-    ctx.drawImage(video, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Detect face + extract descriptor
-    const img = await faceapi.bufferToImage(canvas);
-    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+    if (detection) {
+      setFaceDetected(true);
+      const { landmarks, descriptor } = detection;
+      const box = detection.detection.box;
 
-    if (!detection) {
-      setError("Wajah tidak terdeteksi. Pastikan wajah terlihat jelas.");
-      setTimeout(() => setError(null), 3000);
-      return;
-    }
+      // Draw face box
+      ctx.strokeStyle = "#22c55e";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
 
-    const photoUrl = canvas.toDataURL("image/jpeg", 0.8);
-    setPhotos(prev => [...prev, photoUrl]);
-    setDescriptors(prev => [...prev, Array.from(detection.descriptor)]);
-
-    if (photos.length + 1 >= 3) {
-      // Done capturing
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      setStep("processing");
-    }
-  };
-
-  const saveDescriptors = async () => {
-    if (!employee || descriptors.length < 3) return;
-    setSaving(true);
-    try {
-      // Upload photos to storage
-      const photoPaths = [];
-      for (let i = 0; i < photos.length; i++) {
-        const blob = await (await fetch(photos[i])).blob();
-        const path = `face-register/${employee.id}/${Date.now()}-${i}.jpg`;
-        await supabase.storage.from("photo.attendance").upload(path, blob, { contentType: "image/jpeg" });
-        photoPaths.push(path);
-      }
-
-      // Save to database
-      const { error: dbError } = await supabase.from("employee_face_descriptors").insert({
-        employee_id: employee.id,
-        descriptors: descriptors,
-        photos: photoPaths,
+      // Draw landmark dots
+      ctx.fillStyle = "#22c55e80";
+      landmarks.positions.forEach(pt => {
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2); ctx.fill();
       });
 
-      if (dbError) throw dbError;
-      setStep("done");
-    } catch (e) {
-      setError("Gagal menyimpan: " + e.message);
+      const step = STEPS[currentStep];
+      if (!step) { /* all done */ }
+      else if (step.id === "blink") {
+        // Blink detection via EAR
+        const leftEye = landmarks.getLeftEye();
+        const rightEye = landmarks.getRightEye();
+        const ear = (getEAR(leftEye) + getEAR(rightEye)) / 2;
+        if (lastEarRef.current > 0.25 && ear < 0.20 && !blinkDetectedRef.current) {
+          blinkDetectedRef.current = true;
+          setBlinkCount(c => c + 1);
+          playBeep();
+          // Capture on blink
+          captureFrame(video, descriptor);
+          advanceStep();
+        }
+        lastEarRef.current = ear;
+        // Draw EAR indicator
+        ctx.fillStyle = ear < 0.20 ? "#ef4444" : "#22c55e";
+        ctx.fillRect(box.x, box.y - 20, box.width * Math.min(ear / 0.35, 1), 8);
+      } else {
+        // Head pose detection
+        const pose = getHeadPose(landmarks);
+        if (pose === step.id && !capturedRef.current.has(step.id)) {
+          capturedRef.current.add(step.id);
+          playBeep();
+          captureFrame(video, descriptor);
+          advanceStep();
+        }
+
+        // Draw pose indicator
+        const poseColor = pose === step.id ? "#22c55e" : "#f59e0b";
+        ctx.fillStyle = poseColor;
+        ctx.font = "14px sans-serif";
+        ctx.fillText(`Pose: ${pose}`, box.x, box.y - 8);
+      }
+    } else {
+      setFaceDetected(false);
     }
-    setSaving(false);
+
+    if (runningRef.current) requestAnimationFrame(detectLoop);
   };
 
-  useEffect(() => {
-    if (step === "processing" && descriptors.length >= 3) saveDescriptors();
-  }, [step, descriptors.length]);
+  const captureFrame = (video, descriptor) => {
+    const c = document.createElement("canvas");
+    c.width = video.videoWidth; c.height = video.videoHeight;
+    const cx = c.getContext("2d");
+    cx.translate(c.width, 0); cx.scale(-1, 1);
+    cx.drawImage(video, 0, 0);
+    setPhotos(prev => [...prev, c.toDataURL("image/jpeg", 0.8)]);
+    setDescriptors(prev => [...prev, Array.from(descriptor)]);
+  };
 
-  if (error && !["camera", "processing"].includes(step)) {
-    return (
-      <Layout>
-        <div className="max-w-md mx-auto mt-16">
-          <Card className="p-8 text-center space-y-4">
-            <AlertTriangle className="h-12 w-12 text-red-500 mx-auto" />
-            <p className="text-sm text-red-600">{error}</p>
-            <Button variant="outline" onClick={() => window.location.reload()}>Coba Lagi</Button>
-          </Card>
-        </div>
-      </Layout>
-    );
-  }
+  const advanceStep = () => {
+    setCompletedSteps(prev => [...prev, STEPS[currentStep].id]);
+    const nextStep = currentStep + 1;
+    if (nextStep >= STEPS.length) {
+      // All steps done - auto save
+      runningRef.current = false;
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      setPhase("saving");
+    } else {
+      setCurrentStep(nextStep);
+      blinkDetectedRef.current = false;
+    }
+  };
+
+  // Auto-save when phase becomes "saving"
+  useEffect(() => {
+    if (phase !== "saving" || !employee || descriptors.length < 3) return;
+    (async () => {
+      try {
+        const photoPaths = [];
+        for (let i = 0; i < photos.length; i++) {
+          const blob = await (await fetch(photos[i])).blob();
+          const path = `face-register/${employee.id}/${Date.now()}-${i}.jpg`;
+          await supabase.storage.from("photo.attendance").upload(path, blob, { contentType: "image/jpeg" });
+          photoPaths.push(path);
+        }
+        const { error } = await supabase.from("employee_face_descriptors").insert({
+          employee_id: employee.id,
+          descriptors,
+          photos: photoPaths,
+        });
+        if (error) throw error;
+        setPhase("done");
+      } catch (e) {
+        setErrorMsg("Gagal menyimpan: " + e.message);
+        setPhase("error");
+      }
+    })();
+  }, [phase, employee, descriptors, photos]);
+
+  // Error screen
+  if (phase === "error") return (
+    <Layout>
+      <div className="max-w-md mx-auto mt-16">
+        <Card className="p-8 text-center space-y-4">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto" />
+          <p className="text-sm text-red-600">{errorMsg}</p>
+          <Button variant="outline" onClick={() => window.location.reload()}>Coba Lagi</Button>
+        </Card>
+      </div>
+    </Layout>
+  );
 
   return (
     <Layout>
-      <div className="max-w-lg mx-auto mt-8 space-y-6">
+      <div className="max-w-lg mx-auto mt-6 space-y-6">
         <AnimatePresence mode="wait">
           {/* Loading */}
-          {step === "loading" && (
-            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-20">
+          {phase === "loading" && (
+            <motion.div key="load" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center py-20">
               <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">Memuat model face recognition...</p>
             </motion.div>
           )}
 
           {/* Already registered */}
-          {step === "already" && (
+          {phase === "already" && (
             <motion.div key="already" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <Card className="p-8 text-center space-y-4">
                 <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto">
                   <CheckCircle className="h-8 w-8 text-emerald-500" />
                 </div>
                 <h2 className="text-xl font-bold">Wajah Sudah Terdaftar</h2>
-                <p className="text-sm text-muted-foreground">
-                  {employee?.name}, wajah kamu sudah terdaftar untuk auto absen.
-                </p>
+                <p className="text-sm text-muted-foreground">{employee?.name}, wajah kamu sudah terdaftar untuk auto absen.</p>
                 <Button variant="outline" onClick={async () => {
                   await supabase.from("employee_face_descriptors").delete().eq("employee_id", employee.id);
                   window.location.reload();
@@ -175,7 +274,7 @@ export default function FaceSetup() {
           )}
 
           {/* Intro */}
-          {step === "intro" && (
+          {phase === "intro" && (
             <motion.div key="intro" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <Card className="p-8 text-center space-y-5">
                 <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg shadow-blue-500/25">
@@ -185,12 +284,17 @@ export default function FaceSetup() {
                   <h2 className="text-xl font-bold mb-1">Validasi Wajah</h2>
                   <p className="text-sm text-muted-foreground">Hai {employee?.name}!</p>
                 </div>
-                <div className="text-left bg-muted/50 rounded-xl p-4 space-y-2 text-sm">
-                  <p className="font-medium">Langkah-langkah:</p>
-                  <p>1. Klik tombol mulai untuk membuka kamera</p>
-                  <p>2. Foto wajah kamu dari <strong>3 sudut</strong> berbeda</p>
-                  <p>3. Pastikan wajah terlihat jelas dan pencahayaan cukup</p>
-                  <p className="text-xs text-muted-foreground mt-2">Proses ini hanya dilakukan sekali.</p>
+                <div className="text-left bg-muted/50 rounded-xl p-4 text-sm space-y-3">
+                  <p className="font-medium">Kamu akan diminta untuk:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {STEPS.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-card rounded-lg px-3 py-2">
+                        <span className="text-lg">{s.icon}</span>
+                        <span className="text-xs">{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Semua dilakukan otomatis - cukup ikuti instruksi di layar. Proses ini hanya sekali.</p>
                 </div>
                 <Button onClick={startCamera} className="w-full gap-2 h-11 bg-gradient-to-r from-blue-600 to-purple-600">
                   <Camera className="h-4 w-4" /> Mulai Validasi
@@ -199,78 +303,116 @@ export default function FaceSetup() {
             </motion.div>
           )}
 
-          {/* Camera */}
-          {step === "camera" && (
+          {/* Camera - Live Detection */}
+          {phase === "camera" && (
             <motion.div key="camera" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <Card className="overflow-hidden">
+                {/* Step progress */}
+                <div className="px-4 py-3 border-b bg-muted/30">
+                  <div className="flex items-center gap-1">
+                    {STEPS.map((s, i) => (
+                      <React.Fragment key={i}>
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 transition-all ${
+                          completedSteps.includes(s.id) ? "bg-emerald-500 text-white" :
+                          i === currentStep ? "bg-primary text-primary-foreground ring-2 ring-primary/30" :
+                          "bg-muted text-muted-foreground"
+                        }`}>
+                          {completedSteps.includes(s.id) ? <CheckCircle className="h-4 w-4" /> : s.icon}
+                        </div>
+                        {i < STEPS.length - 1 && (
+                          <div className={`flex-1 h-0.5 ${completedSteps.includes(s.id) ? "bg-emerald-500" : "bg-muted"}`} />
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Video + canvas overlay */}
                 <div className="relative bg-black">
                   <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-[4/3] object-cover scale-x-[-1]" />
-                  {/* Face guide overlay */}
+                  <canvas ref={canvasRef} className="absolute inset-0 w-full h-full scale-x-[-1]" />
+
+                  {/* Guide oval */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-48 h-60 border-2 border-white/40 rounded-[50%]" />
+                    <div className={`w-44 h-56 border-[3px] rounded-[50%] transition-colors duration-300 ${
+                      faceDetected ? "border-emerald-400/70" : "border-white/30"
+                    }`} />
                   </div>
-                  {/* Photo counter */}
-                  <div className="absolute top-3 left-3 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm">
-                    Foto {photos.length + 1} / 3
+
+                  {/* Status */}
+                  <div className="absolute top-3 left-3 right-3 flex justify-between">
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md text-xs ${
+                      faceDetected ? "bg-emerald-500/80 text-white" : "bg-black/50 text-white/70"
+                    }`}>
+                      <div className={`h-2 w-2 rounded-full ${faceDetected ? "bg-white animate-pulse" : "bg-red-400"}`} />
+                      {faceDetected ? "Wajah terdeteksi" : "Mencari wajah..."}
+                    </div>
+                    <div className="bg-black/50 backdrop-blur-md text-white text-xs px-3 py-1.5 rounded-full">
+                      {completedSteps.length}/{STEPS.length}
+                    </div>
                   </div>
-                  {/* Captured photos */}
+
+                  {/* Captured thumbnails */}
                   {photos.length > 0 && (
-                    <div className="absolute bottom-3 left-3 flex gap-2">
+                    <div className="absolute bottom-3 left-3 flex gap-1.5">
                       {photos.map((p, i) => (
-                        <img key={i} src={p} className="h-12 w-12 rounded-lg object-cover border-2 border-white shadow" />
+                        <motion.img key={i} initial={{ scale: 0 }} animate={{ scale: 1 }}
+                          src={p} className="h-11 w-11 rounded-lg object-cover border-2 border-emerald-400 shadow" />
                       ))}
                     </div>
                   )}
                 </div>
-                {/* Error toast */}
-                <AnimatePresence>
-                  {error && (
-                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                      className="bg-red-50 dark:bg-red-950/30 text-red-600 text-sm px-4 py-2 text-center">
-                      {error}
-                    </motion.div>
+
+                {/* Current instruction */}
+                <motion.div key={currentStep} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+                  className="p-4 text-center">
+                  {STEPS[currentStep] && (
+                    <>
+                      <p className="text-2xl mb-1">{STEPS[currentStep].icon}</p>
+                      <p className="font-semibold text-sm">{STEPS[currentStep].label}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {STEPS[currentStep].id === "blink" ? "Kedipkan mata kamu 1 kali" :
+                         STEPS[currentStep].id === "front" ? "Pastikan wajah terlihat jelas" :
+                         `Miringkan kepala perlahan ke ${STEPS[currentStep].id === "left" ? "kiri" : "kanan"}`}
+                      </p>
+                    </>
                   )}
-                </AnimatePresence>
-                <div className="p-4 space-y-2">
-                  <p className="text-sm text-center text-muted-foreground">
-                    {photos.length === 0 && "Arahkan wajah ke depan kamera"}
-                    {photos.length === 1 && "Sedikit miringkan kepala ke kiri"}
-                    {photos.length === 2 && "Sedikit miringkan kepala ke kanan"}
-                  </p>
-                  <Button onClick={capturePhoto} className="w-full gap-2 h-11 bg-gradient-to-r from-blue-600 to-purple-600">
-                    <Camera className="h-4 w-4" /> Ambil Foto {photos.length + 1}
-                  </Button>
-                </div>
+                </motion.div>
               </Card>
             </motion.div>
           )}
 
-          {/* Processing */}
-          {step === "processing" && (
-            <motion.div key="processing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
+          {/* Saving */}
+          {phase === "saving" && (
+            <motion.div key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
               <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">Menyimpan data wajah...</p>
             </motion.div>
           )}
 
           {/* Done */}
-          {step === "done" && (
+          {phase === "done" && (
             <motion.div key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
               <Card className="p-8 text-center space-y-5">
                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, delay: 0.2 }}
                   className="h-20 w-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30">
                   <CheckCircle className="h-10 w-10 text-white" />
                 </motion.div>
-                <div>
-                  <h2 className="text-xl font-bold mb-1">Validasi Berhasil!</h2>
-                  <p className="text-sm text-muted-foreground">{employee?.name}</p>
-                </div>
+                <h2 className="text-xl font-bold">Validasi Berhasil!</h2>
+                <p className="text-sm text-muted-foreground">{employee?.name}</p>
                 <div className="flex justify-center gap-2">
                   {photos.map((p, i) => (
-                    <img key={i} src={p} className="h-16 w-16 rounded-xl object-cover shadow" />
+                    <motion.img key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * 0.1 }}
+                      src={p} className="h-16 w-16 rounded-xl object-cover shadow" />
                   ))}
                 </div>
-                <p className="text-sm text-muted-foreground">Wajah kamu sudah terdaftar. Sekarang kamu bisa absen otomatis lewat kamera kiosk.</p>
+                <div className="bg-muted/50 rounded-xl p-3 text-sm space-y-1">
+                  <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah depan ✓</div>
+                  <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah kiri ✓</div>
+                  <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah kanan ✓</div>
+                  <div className="flex items-center gap-2 text-emerald-600"><Eye className="h-4 w-4" /> Liveness check ✓</div>
+                </div>
+                <p className="text-xs text-muted-foreground">Sekarang kamu bisa absen otomatis lewat kamera kiosk.</p>
               </Card>
             </motion.div>
           )}
