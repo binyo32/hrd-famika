@@ -39,9 +39,9 @@ function getHeadPose(landmarks) {
   const w = right.x - left.x;
   if (w < 0.01) return "front";
   const ratio = (nose.x - left.x) / w;
-  // MediaPipe coords: 0-1 normalized, mirrored video
-  if (ratio < 0.44) return "left";
-  if (ratio > 0.56) return "right";
+  // Lebih ketat: perlu miringkan lebih jelas
+  if (ratio < 0.42) return "left";
+  if (ratio > 0.58) return "right";
   return "front";
 }
 
@@ -54,6 +54,7 @@ export default function FaceSetup() {
   const [photos, setPhotos] = useState([]);
   const [faceDetected, setFaceDetected] = useState(false);
   const [blinkScore, setBlinkScore] = useState(0);
+  const [holdProgress, setHoldProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState(null);
   const [loadingMsg, setLoadingMsg] = useState("Memuat model...");
   const [showFallback, setShowFallback] = useState(false);
@@ -69,6 +70,7 @@ export default function FaceSetup() {
   const blinkStepStartRef = useRef(0);
   const descriptorsRef = useRef([]);
   const photosRef = useRef([]);
+  const holdFramesRef = useRef(0);  // Must hold pose for N frames
 
   // Init
   useEffect(() => {
@@ -113,6 +115,7 @@ export default function FaceSetup() {
     descriptorsRef.current = []; photosRef.current = [];
     capturedRef.current = new Set();
     blinkFramesRef.current = 0; blinkStepStartRef.current = 0;
+    holdFramesRef.current = 0;
     setShowFallback(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
@@ -159,30 +162,38 @@ export default function FaceSetup() {
       if (!step) { if (runningRef.current) requestAnimationFrame(detectLoop); return; }
 
       if (step.id === "blink") {
-        // Blink via blendshapes (MUCH easier than EAR!)
         const eyeL = blendshapes.find(b => b.categoryName === "eyeBlinkLeft")?.score || 0;
         const eyeR = blendshapes.find(b => b.categoryName === "eyeBlinkRight")?.score || 0;
         const blink = (eyeL + eyeR) / 2;
         setBlinkScore(blink);
 
         if (!blinkStepStartRef.current) blinkStepStartRef.current = Date.now();
-        if (Date.now() - blinkStepStartRef.current > 8000) setShowFallback(true);
+        if (Date.now() - blinkStepStartRef.current > 10000) setShowFallback(true);
 
-        // Eyes closed for 3+ frames
-        if (blink > 0.35) blinkFramesRef.current++;
-        else blinkFramesRef.current = 0;
+        // Eyes must be closed firmly (>0.45) for 5+ frames
+        if (blink > 0.45) blinkFramesRef.current++;
+        else blinkFramesRef.current = Math.max(0, blinkFramesRef.current - 1);
 
-        if (blinkFramesRef.current >= 3) {
+        if (blinkFramesRef.current >= 5) {
           playBeep();
           captureAndAdvance(video);
         }
       } else {
-        // Head pose from 478 landmarks
+        // Head pose - must HOLD position for 8 frames
         const pose = getHeadPose(landmarks);
         if (pose === step.id && !capturedRef.current.has(step.id)) {
-          capturedRef.current.add(step.id);
-          playBeep();
-          captureAndAdvance(video);
+          holdFramesRef.current++;
+          setHoldProgress(holdFramesRef.current / 8);
+          if (holdFramesRef.current >= 8) {
+            capturedRef.current.add(step.id);
+            holdFramesRef.current = 0;
+            setHoldProgress(0);
+            playBeep();
+            captureAndAdvance(video);
+          }
+        } else {
+          holdFramesRef.current = Math.max(0, holdFramesRef.current - 2);
+          setHoldProgress(holdFramesRef.current / 8);
         }
       }
     } else {
@@ -453,12 +464,19 @@ export default function FaceSetup() {
                     {completedSteps.length}/{STEPS.length}
                   </div>
 
-                  {/* Blink progress bar */}
-                  {STEPS[currentStep]?.id === "blink" && (
+                  {/* Hold / Blink progress bar */}
+                  {STEPS[currentStep] && (
                     <div className="absolute top-10 left-3 right-3">
-                      <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-400 rounded-full transition-all duration-100" style={{ width: `${Math.min(blinkScore * 200, 100)}%` }} />
+                      <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-400 rounded-full transition-all duration-150 ease-out" style={{
+                          width: STEPS[currentStep].id === "blink"
+                            ? `${Math.min(blinkScore * 200, 100)}%`
+                            : `${Math.min(holdProgress * 100, 100)}%`
+                        }} />
                       </div>
+                      <p className="text-center text-white/40 text-[9px] mt-0.5">
+                        {STEPS[currentStep].id === "blink" ? "Tutup mata..." : "Tahan posisi..."}
+                      </p>
                     </div>
                   )}
 
