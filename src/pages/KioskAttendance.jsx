@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { CheckCircle, AlertTriangle, Loader2, Camera, Clock, Users, X } from "lucide-react";
+import { CheckCircle, AlertTriangle, Loader2, Camera, Clock, Users, Play } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import * as faceapi from "@vladmandic/face-api";
@@ -22,12 +22,12 @@ function playSuccessSound() {
 }
 
 export default function KioskAttendance() {
-  const [status, setStatus] = useState("loading"); // loading, auth, ready, error
+  const [status, setStatus] = useState("loading");
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [faceMatcher, setFaceMatcher] = useState(null);
   const [employeeMap, setEmployeeMap] = useState({});
   const [todayLog, setTodayLog] = useState([]);
-  const [currentDetection, setCurrentDetection] = useState(null); // { name, confidence, employee }
+  const [currentDetection, setCurrentDetection] = useState(null);
   const [recentCheckin, setRecentCheckin] = useState(null);
   const [detecting, setDetecting] = useState(false);
   const [registeredCount, setRegisteredCount] = useState(0);
@@ -35,50 +35,46 @@ export default function KioskAttendance() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPw, setLoginPw] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [cameraReady, setCameraReady] = useState(false);
+  const [needTap, setNeedTap] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const detectingRef = useRef(false);
   const checkedInRef = useRef(new Set());
   const cooldownRef = useRef(new Map());
+  const faceMatcherRef = useRef(null);
+  const employeeMapRef = useRef({});
 
-  // Clock
-  useEffect(() => {
-    const id = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => { const id = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(id); }, []);
 
-  // Check auth on mount
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) { await initKiosk(); }
-      else { setStatus("auth"); }
+      if (session) await initKiosk();
+      else setStatus("auth");
     })();
-    return () => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+    return () => { detectingRef.current = false; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
   }, []);
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoginError("");
+    e.preventDefault(); setLoginError("");
     const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPw });
-    if (error) { setLoginError("Login gagal: " + error.message); return; }
+    if (error) { setLoginError("Login gagal"); return; }
     await initKiosk();
   };
 
   const initKiosk = async () => {
     setStatus("loading");
     try {
-      // Load models
       await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
       await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
       await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
       setModelsLoaded(true);
 
-      // Load all face descriptors
       const { data: faceData } = await supabase.from("employee_face_descriptors").select("employee_id, descriptors");
       if (!faceData?.length) { setStatus("error"); return; }
 
-      // Load ALL employee info (Supabase default limit 1000, kita punya 2175+)
+      // Load ALL employees (paginated)
       let employees = [];
       let from = 0;
       while (true) {
@@ -89,94 +85,123 @@ export default function KioskAttendance() {
         from += 1000;
       }
       const empMap = {};
-      employees?.forEach(e => { empMap[e.id] = e; });
+      employees.forEach(e => { empMap[e.id] = e; });
       setEmployeeMap(empMap);
+      employeeMapRef.current = empMap;
       setRegisteredCount(faceData.length);
 
-      // Build face matcher
       const labeledDescriptors = faceData.map(fd => {
         const descs = fd.descriptors.map(d => new Float32Array(d));
         return new faceapi.LabeledFaceDescriptors(fd.employee_id, descs);
       });
-      setFaceMatcher(new faceapi.FaceMatcher(labeledDescriptors, 0.55));
+      const matcher = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
+      setFaceMatcher(matcher);
+      faceMatcherRef.current = matcher;
 
-      // Load today's attendance
       await loadTodayLog();
-
-      // Start camera (mobile-friendly: try ideal first, fallback to basic)
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } });
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      }
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute("playsinline", "true");
-        videoRef.current.setAttribute("webkit-playsinline", "true");
-        try { await videoRef.current.play(); } catch { /* autoplay blocked, user will tap */ }
-      }
-
       setStatus("ready");
-      setTimeout(() => startDetection(), 1000);
     } catch (e) {
       console.error("Init error:", e);
       setStatus("error");
     }
   };
 
+  // Start camera AFTER status is ready and video element exists
+  useEffect(() => {
+    if (status !== "ready") return;
+    let cancelled = false;
+    const startCam = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        video.onloadeddata = () => {
+          setCameraReady(true);
+          setNeedTap(false);
+          detectingRef.current = true;
+          setDetecting(true);
+          runDetection();
+        };
+        try {
+          await video.play();
+        } catch {
+          // Autoplay blocked - show tap overlay
+          setNeedTap(true);
+        }
+      } catch (e) {
+        console.error("Camera error:", e);
+        setNeedTap(true);
+      }
+    };
+    startCam();
+    return () => { cancelled = true; };
+  }, [status]);
+
+  const handleTapToStart = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (!video.srcObject) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        streamRef.current = stream;
+        video.srcObject = stream;
+      }
+      await video.play();
+      setCameraReady(true);
+      setNeedTap(false);
+      detectingRef.current = true;
+      setDetecting(true);
+      runDetection();
+    } catch (e) { console.error("Tap play error:", e); }
+  };
+
   const loadTodayLog = async () => {
     const today = new Date().toISOString().split("T")[0];
-    const { data } = await supabase.from("attendance_records").select("employee_id, check_in_time").eq("attendance_date", today).order("check_in_time", { ascending: false });
+    const { data } = await supabase.from("attendance_records").select("employee_id, check_in_time").eq("attendance_date", today).order("check_in_time", { ascending: false }).limit(50);
     if (data) {
       setTodayLog(data);
       checkedInRef.current = new Set(data.map(d => d.employee_id));
     }
   };
 
-  const startDetection = useCallback(() => {
-    if (detectingRef.current) return;
-    detectingRef.current = true;
-    setDetecting(true);
+  const runDetection = async () => {
+    if (!detectingRef.current || !videoRef.current || !faceMatcherRef.current) return;
+    const video = videoRef.current;
+    if (video.readyState < 2) { setTimeout(runDetection, 500); return; }
 
-    const detect = async () => {
-      if (!detectingRef.current || !videoRef.current || !faceMatcher) return;
-      try {
-        const detection = await faceapi.detectSingleFace(videoRef.current).withFaceLandmarks().withFaceDescriptor();
-        if (detection) {
-          const match = faceMatcher.findBestMatch(detection.descriptor);
-          if (match.label !== "unknown" && match.distance < 0.55) {
-            const empId = match.label;
-            const confidence = Math.round((1 - match.distance) * 100);
-            const emp = employeeMap[empId];
-            setCurrentDetection({ name: emp?.name || "Unknown", confidence, employee: emp });
+    try {
+      const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+      if (detection) {
+        const match = faceMatcherRef.current.findBestMatch(detection.descriptor);
+        if (match.label !== "unknown" && match.distance < 0.55) {
+          const empId = match.label;
+          const confidence = Math.round((1 - match.distance) * 100);
+          const emp = employeeMapRef.current[empId];
+          const alreadyCheckedIn = checkedInRef.current.has(empId);
 
-            // Auto check-in (with cooldown)
+          setCurrentDetection({ name: emp?.name || "Unknown", confidence, employee: emp, alreadyCheckedIn });
+
+          if (!alreadyCheckedIn) {
             const now = Date.now();
             const lastCheck = cooldownRef.current.get(empId) || 0;
-            if (!checkedInRef.current.has(empId) && now - lastCheck > 10000) {
+            if (now - lastCheck > 10000) {
               cooldownRef.current.set(empId, now);
               await doCheckIn(empId, emp);
             }
-          } else {
-            setCurrentDetection(null);
           }
         } else {
           setCurrentDetection(null);
         }
-      } catch {}
+      } else {
+        setCurrentDetection(null);
+      }
+    } catch {}
 
-      if (detectingRef.current) requestAnimationFrame(() => setTimeout(detect, 500));
-    };
-    detect();
-  }, [faceMatcher, employeeMap]);
-
-  useEffect(() => {
-    if (status === "ready" && faceMatcher && Object.keys(employeeMap).length) {
-      startDetection();
-    }
-  }, [status, faceMatcher, employeeMap, startDetection]);
+    if (detectingRef.current) setTimeout(runDetection, 600);
+  };
 
   const doCheckIn = async (employeeId, emp) => {
     try {
@@ -189,190 +214,196 @@ export default function KioskAttendance() {
         status_id: "H",
         project: "Auto Absen (Face Recognition)",
       });
-      if (error) { console.error("Checkin error:", error); return; }
+      if (error) return;
 
       checkedInRef.current.add(employeeId);
       setRecentCheckin({ name: emp?.name, time: now });
       playSuccessSound();
-
-      // Refresh log
       await loadTodayLog();
       setTimeout(() => setRecentCheckin(null), 4000);
-    } catch (e) { console.error("Checkin error:", e); }
+    } catch {}
   };
 
   const timeStr = currentTime.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const dateStr = currentTime.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   // Auth screen
-  if (status === "auth") {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 w-full max-w-sm border border-white/20">
-          <div className="text-center mb-6">
-            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-3">
-              <Camera className="h-8 w-8 text-white" />
-            </div>
-            <h1 className="text-xl font-bold text-white">Kiosk Auto Absen</h1>
-            <p className="text-sm text-white/60 mt-1">Login admin untuk mengaktifkan kiosk</p>
+  if (status === "auth") return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 w-full max-w-sm border border-white/20">
+        <div className="text-center mb-6">
+          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-3">
+            <Camera className="h-8 w-8 text-white" />
           </div>
-          <form onSubmit={handleLogin} className="space-y-3">
-            <input value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="Email admin" type="email"
-              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 text-sm outline-none focus:border-blue-400" />
-            <input value={loginPw} onChange={e => setLoginPw(e.target.value)} placeholder="Password" type="password"
-              className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 text-sm outline-none focus:border-blue-400" />
-            {loginError && <p className="text-red-400 text-xs text-center">{loginError}</p>}
-            <button type="submit" className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium text-sm hover:from-blue-600 hover:to-purple-700 transition-all">
-              Aktifkan Kiosk
-            </button>
-          </form>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Loading
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin text-blue-400 mx-auto mb-4" />
-          <p className="text-white/70 text-sm">{modelsLoaded ? "Memuat data wajah karyawan..." : "Memuat model face recognition..."}</p>
+          <h1 className="text-xl font-bold text-white">Kiosk Auto Absen</h1>
+          <p className="text-sm text-white/60 mt-1">Login admin untuk mengaktifkan</p>
         </div>
-      </div>
-    );
-  }
+        <form onSubmit={handleLogin} className="space-y-3">
+          <input value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="Email" type="email"
+            className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 text-sm outline-none focus:border-blue-400" />
+          <input value={loginPw} onChange={e => setLoginPw(e.target.value)} placeholder="Password" type="password"
+            className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 text-sm outline-none focus:border-blue-400" />
+          {loginError && <p className="text-red-400 text-xs text-center">{loginError}</p>}
+          <button type="submit" className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium text-sm">Aktifkan Kiosk</button>
+        </form>
+      </motion.div>
+    </div>
+  );
 
-  // Error
-  if (status === "error") {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center">
-        <div className="text-center max-w-sm">
-          <AlertTriangle className="h-12 w-12 text-amber-400 mx-auto mb-4" />
-          <h2 className="text-lg font-bold text-white mb-2">Belum Ada Data Wajah</h2>
-          <p className="text-white/60 text-sm mb-4">Belum ada karyawan yang mendaftarkan wajah. Minta karyawan untuk membuka halaman Validasi Wajah terlebih dahulu.</p>
-          <button onClick={() => window.location.reload()} className="px-6 py-2.5 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700">Refresh</button>
-        </div>
+  if (status === "loading") return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center">
+      <div className="text-center">
+        <Loader2 className="h-10 w-10 animate-spin text-blue-400 mx-auto mb-4" />
+        <p className="text-white/70 text-sm">{modelsLoaded ? "Memuat data karyawan..." : "Memuat model face recognition..."}</p>
       </div>
-    );
-  }
+    </div>
+  );
 
-  // Main kiosk view
+  if (status === "error") return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center">
+      <div className="text-center max-w-sm">
+        <AlertTriangle className="h-12 w-12 text-amber-400 mx-auto mb-4" />
+        <h2 className="text-lg font-bold text-white mb-2">Belum Ada Data Wajah</h2>
+        <p className="text-white/60 text-sm mb-4">Minta karyawan buka /face-setup untuk validasi wajah.</p>
+        <button onClick={() => window.location.reload()} className="px-6 py-2.5 rounded-xl bg-blue-600 text-white text-sm">Refresh</button>
+      </div>
+    </div>
+  );
+
+  // Main kiosk
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <Camera className="h-5 w-5 text-white" />
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+            <Camera className="h-4 w-4 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Famika Auto Absen</h1>
-            <p className="text-xs text-white/50">{registeredCount} wajah terdaftar</p>
+            <h1 className="text-sm font-bold text-white">Famika Auto Absen</h1>
+            <p className="text-[10px] text-white/50">{registeredCount} wajah terdaftar</p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-2xl font-bold text-white tabular-nums">{timeStr}</p>
-          <p className="text-xs text-white/50">{dateStr}</p>
+          <p className="text-lg font-bold text-white tabular-nums">{timeStr}</p>
+          <p className="text-[10px] text-white/50">{dateStr}</p>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col md:flex-row gap-3 p-3 md:p-4 min-h-0 overflow-hidden">
-        {/* Camera section */}
-        <div className="md:flex-1 flex flex-col min-w-0 min-h-0">
-          <div className="relative bg-black rounded-2xl overflow-hidden aspect-square md:flex-1 md:aspect-auto">
-            <video ref={videoRef} autoPlay playsInline muted
-              onClick={(e) => { try { e.target.play(); } catch {} }}
-              className="w-full h-full object-cover scale-x-[-1]" />
+      {/* Content */}
+      <div className="flex-1 flex flex-col md:flex-row gap-2 p-2 md:p-3 min-h-0 overflow-hidden">
+        {/* Camera */}
+        <div className="md:flex-1 flex flex-col min-h-0">
+          <div className="relative bg-black rounded-xl overflow-hidden flex-1 min-h-[250px]">
+            <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover scale-x-[-1]" />
+
+            {/* Tap to start overlay */}
+            {needTap && (
+              <button onClick={handleTapToStart}
+                className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 text-white">
+                <div className="h-20 w-20 rounded-full bg-blue-500/30 flex items-center justify-center mb-3 border-2 border-blue-400">
+                  <Play className="h-8 w-8 text-blue-400 ml-1" />
+                </div>
+                <p className="font-semibold">Tap untuk mulai kamera</p>
+                <p className="text-xs text-white/50 mt-1">Izinkan akses kamera saat diminta</p>
+              </button>
+            )}
 
             {/* Detection overlay */}
             <AnimatePresence>
               {currentDetection && (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-                  className="absolute bottom-4 left-4 right-4 bg-black/70 backdrop-blur-md rounded-xl p-4 border border-white/20">
+                  className="absolute bottom-3 left-3 right-3 bg-black/70 backdrop-blur-md rounded-xl p-3 border border-white/20">
                   <div className="flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                    <div className={`h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 ${
+                      currentDetection.alreadyCheckedIn
+                        ? "bg-gradient-to-br from-amber-500 to-amber-600"
+                        : "bg-gradient-to-br from-blue-500 to-purple-600"
+                    }`}>
                       {currentDetection.name?.[0]}
                     </div>
-                    <div className="flex-1">
-                      <p className="text-white font-semibold">{currentDetection.name}</p>
-                      <p className="text-white/60 text-xs">{currentDetection.employee?.position} &middot; {currentDetection.employee?.division}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-semibold text-sm truncate">{currentDetection.name}</p>
+                      <p className="text-white/60 text-[11px] truncate">{currentDetection.employee?.position}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-emerald-400 font-bold text-lg">{currentDetection.confidence}%</p>
-                      <p className="text-white/40 text-[10px]">match</p>
+                    <div className="text-right flex-shrink-0">
+                      {currentDetection.alreadyCheckedIn ? (
+                        <div className="flex items-center gap-1 text-amber-400">
+                          <CheckCircle className="h-4 w-4" />
+                          <span className="text-xs font-medium">Sudah absen</span>
+                        </div>
+                      ) : (
+                        <p className="text-emerald-400 font-bold text-lg">{currentDetection.confidence}%</p>
+                      )}
                     </div>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Success overlay */}
+            {/* Success check-in overlay */}
             <AnimatePresence>
               {recentCheckin && (
                 <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-                  className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                  className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-20">
                   <div className="text-center">
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300 }}
-                      className="h-24 w-24 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-emerald-500/40">
-                      <CheckCircle className="h-12 w-12 text-white" />
+                      className="h-20 w-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-2xl shadow-emerald-500/40">
+                      <CheckCircle className="h-10 w-10 text-white" />
                     </motion.div>
-                    <p className="text-white text-2xl font-bold mb-1">{recentCheckin.name}</p>
-                    <p className="text-emerald-400 font-medium">Check-in berhasil!</p>
-                    <p className="text-white/50 text-sm mt-1">{new Date(recentCheckin.time).toLocaleTimeString("id-ID")}</p>
+                    <p className="text-white text-xl font-bold">{recentCheckin.name}</p>
+                    <p className="text-emerald-400 font-medium text-sm">Check-in berhasil!</p>
+                    <p className="text-white/50 text-xs mt-1">{new Date(recentCheckin.time).toLocaleTimeString("id-ID")}</p>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Status indicator */}
-            <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1.5">
-              <div className={`h-2 w-2 rounded-full ${detecting ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
-              <span className="text-white/70 text-xs">{detecting ? "Mendeteksi wajah..." : "Memulai..."}</span>
+            {/* Status badge */}
+            <div className="absolute top-2 left-2">
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full backdrop-blur-md text-[11px] ${
+                cameraReady && detecting ? "bg-emerald-500/80 text-white" : "bg-black/50 text-white/70"
+              }`}>
+                <div className={`h-1.5 w-1.5 rounded-full ${cameraReady && detecting ? "bg-white animate-pulse" : "bg-red-400"}`} />
+                {cameraReady && detecting ? "Mendeteksi..." : "Menunggu kamera..."}
+              </div>
             </div>
           </div>
-
-          <p className="text-center text-white/30 text-xs mt-2 hidden md:block">Arahkan wajah ke kamera untuk absen otomatis</p>
         </div>
 
-        {/* Today's log */}
-        <div className="w-full md:w-72 lg:w-80 flex-shrink-0 bg-white/5 rounded-2xl border border-white/10 flex flex-col overflow-hidden max-h-[35vh] md:max-h-full">
-          <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-white/50" />
-              <span className="text-sm font-medium text-white">Hari Ini</span>
+        {/* Today log */}
+        <div className="w-full md:w-64 lg:w-72 flex-shrink-0 bg-white/5 rounded-xl border border-white/10 flex flex-col overflow-hidden max-h-[30vh] md:max-h-full">
+          <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5 text-white/50" />
+              <span className="text-xs font-medium text-white">Hari Ini</span>
             </div>
-            <span className="text-xs text-white/40 bg-white/10 px-2 py-0.5 rounded-full">{todayLog.length} hadir</span>
+            <span className="text-[10px] text-white/40 bg-white/10 px-1.5 py-0.5 rounded-full">{todayLog.length} hadir</span>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <AnimatePresence>
-              {todayLog.slice(0, 20).map((log, i) => {
-                const emp = employeeMap[log.employee_id];
-                const time = new Date(log.check_in_time).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-                return (
-                  <motion.div key={log.employee_id} initial={i === 0 ? { opacity: 0, x: 20 } : false} animate={{ opacity: 1, x: 0 }}
-                    className="flex items-center gap-3 px-4 py-2.5 border-b border-white/5">
-                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500/80 to-purple-500/80 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      {emp?.name?.[0] || "?"}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-xs font-medium truncate">{emp?.name || "Unknown"}</p>
-                      <p className="text-white/40 text-[10px] truncate">{emp?.position}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <CheckCircle className="h-3 w-3 text-emerald-400" />
-                      <span className="text-white/60 text-xs tabular-nums">{time}</span>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+            {todayLog.slice(0, 20).map((log) => {
+              const emp = employeeMap[log.employee_id];
+              const time = new Date(log.check_in_time).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+              return (
+                <div key={`${log.employee_id}-${log.check_in_time}`} className="flex items-center gap-2 px-3 py-2 border-b border-white/5">
+                  <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500/80 to-purple-500/80 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                    {emp?.name?.[0] || "?"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-[11px] font-medium truncate">{emp?.name || "—"}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3 text-emerald-400" />
+                    <span className="text-white/60 text-[10px] tabular-nums">{time}</span>
+                  </div>
+                </div>
+              );
+            })}
             {todayLog.length === 0 && (
-              <div className="text-center py-12">
-                <Clock className="h-8 w-8 text-white/20 mx-auto mb-2" />
-                <p className="text-white/30 text-xs">Belum ada yang absen</p>
+              <div className="text-center py-8">
+                <Clock className="h-6 w-6 text-white/20 mx-auto mb-1" />
+                <p className="text-white/30 text-[10px]">Belum ada yang absen</p>
               </div>
             )}
           </div>
