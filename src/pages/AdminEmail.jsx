@@ -666,32 +666,75 @@ Jangan tambahkan komentar atau penjelasan. Output HANYA isi email dalam format H
           {showAiPrompt && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden border-b">
-              <div className="px-4 py-3 bg-gradient-to-r from-purple-500/5 to-pink-500/5 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-purple-500 flex-shrink-0" />
-                  <p className="text-xs font-medium text-purple-700 dark:text-purple-300">Apa yang ingin ditulis AI?</p>
-                </div>
-                <textarea
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generateWithAi(); } }}
-                  placeholder="Contoh: buatkan email undangan meeting hari jumat jam 2 siang untuk review project Q2..."
-                  rows={2}
-                  className="w-full text-sm px-3 py-2 rounded-lg border bg-card resize-none outline-none focus:ring-1 focus:ring-purple-400"
-                  disabled={aiGenerating}
-                />
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] text-muted-foreground">Model: Qwen Local &middot; Enter untuk generate</p>
-                  <div className="flex gap-2">
-                    <button onClick={() => { setShowAiPrompt(false); setAiPrompt(""); }}
-                      className="px-3 py-1.5 text-xs rounded-lg hover:bg-muted text-muted-foreground">Batal</button>
-                    <button onClick={generateWithAi} disabled={!aiPrompt.trim() || aiGenerating}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium disabled:opacity-50">
-                      {aiGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                      {aiGenerating ? "Generating..." : "Generate"}
-                    </button>
+              <div className="relative px-4 py-3 bg-gradient-to-r from-purple-500/5 to-pink-500/5 space-y-2">
+                {/* Shimmer animation saat generating */}
+                {aiGenerating && (
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-400/10 to-transparent"
+                      style={{ animation: "aiShimmer 1.5s ease-in-out infinite" }} />
+                    <style>{`@keyframes aiShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`}</style>
                   </div>
-                </div>
+                )}
+
+                {aiGenerating ? (
+                  /* Generating state - smooth animation */
+                  <div className="relative space-y-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                          <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}>
+                            <Sparkles className="h-4 w-4 text-white" />
+                          </motion.div>
+                        </div>
+                        <motion.div className="absolute -inset-1 rounded-xl bg-purple-400/20" animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
+                          transition={{ duration: 1.5, repeat: Infinity }} />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-purple-700 dark:text-purple-300">AI sedang menulis...</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">"{aiPrompt}"</p>
+                      </div>
+                    </div>
+                    {/* Typing lines animation */}
+                    <div className="space-y-2 pl-12">
+                      {[0, 1, 2].map((i) => (
+                        <motion.div key={i}
+                          initial={{ width: 0, opacity: 0 }}
+                          animate={{ width: ["0%", `${70 + i * 10}%`, `${60 + i * 5}%`], opacity: [0, 1, 0.5] }}
+                          transition={{ duration: 2, delay: i * 0.4, repeat: Infinity, repeatDelay: 0.5 }}
+                          className="h-2.5 rounded-full bg-gradient-to-r from-purple-300/40 to-pink-300/40 dark:from-purple-500/20 dark:to-pink-500/20"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* Input state */
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                      <p className="text-xs font-medium text-purple-700 dark:text-purple-300">Apa yang ingin ditulis AI?</p>
+                    </div>
+                    <textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generateWithAi(); } }}
+                      placeholder="Contoh: buatkan email undangan meeting hari jumat jam 2 siang untuk review project Q2..."
+                      rows={2}
+                      autoFocus
+                      className="w-full text-sm px-3 py-2 rounded-lg border bg-card resize-none outline-none focus:ring-1 focus:ring-purple-400"
+                    />
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-muted-foreground">Model: Qwen Local &middot; Enter untuk generate</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setShowAiPrompt(false); setAiPrompt(""); }}
+                          className="px-3 py-1.5 text-xs rounded-lg hover:bg-muted text-muted-foreground">Batal</button>
+                        <button onClick={generateWithAi} disabled={!aiPrompt.trim()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium disabled:opacity-50 hover:shadow-lg hover:shadow-purple-500/25 transition-shadow">
+                          <Sparkles className="h-3 w-3" /> Generate
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </motion.div>
           )}
