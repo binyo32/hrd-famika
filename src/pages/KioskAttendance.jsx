@@ -94,7 +94,7 @@ export default function KioskAttendance() {
         const descs = fd.descriptors.map(d => new Float32Array(d));
         return new faceapi.LabeledFaceDescriptors(fd.employee_id, descs);
       });
-      const matcher = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
+      const matcher = new faceapi.FaceMatcher(labeledDescriptors, 0.65);
       setFaceMatcher(matcher);
       faceMatcherRef.current = matcher;
 
@@ -176,7 +176,7 @@ export default function KioskAttendance() {
       const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
       if (detection) {
         const match = faceMatcherRef.current.findBestMatch(detection.descriptor);
-        if (match.label !== "unknown" && match.distance < 0.55) {
+        if (match.label !== "unknown" && match.distance < 0.65) {
           const empId = match.label;
           const confidence = Math.round((1 - match.distance) * 100);
           const emp = employeeMapRef.current[empId];
@@ -187,7 +187,7 @@ export default function KioskAttendance() {
           if (!alreadyCheckedIn) {
             const now = Date.now();
             const lastCheck = cooldownRef.current.get(empId) || 0;
-            if (now - lastCheck > 10000) {
+            if (now - lastCheck > 2000) {
               cooldownRef.current.set(empId, now);
               await doCheckIn(empId, emp);
             }
@@ -200,7 +200,7 @@ export default function KioskAttendance() {
       }
     } catch {}
 
-    if (detectingRef.current) setTimeout(runDetection, 600);
+    if (detectingRef.current) setTimeout(runDetection, 300);
   };
 
   const doCheckIn = async (employeeId, emp) => {
@@ -295,7 +295,7 @@ export default function KioskAttendance() {
       <div className="flex-1 flex flex-col md:flex-row gap-2 p-2 md:p-3 min-h-0 overflow-hidden">
         {/* Camera */}
         <div className="md:flex-1 flex flex-col min-h-0">
-          <div className="relative bg-black rounded-xl overflow-hidden flex-1 min-h-[250px]">
+          <div className="relative bg-black rounded-xl overflow-hidden flex-1 min-h-[300px] md:min-h-[400px]">
             <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover scale-x-[-1]" />
 
             {/* Tap to start overlay */}
@@ -373,7 +373,7 @@ export default function KioskAttendance() {
         </div>
 
         {/* Today log */}
-        <div className="w-full md:w-64 lg:w-72 flex-shrink-0 bg-white/5 rounded-xl border border-white/10 flex flex-col overflow-hidden max-h-[30vh] md:max-h-full">
+        <div className="w-full md:w-56 lg:w-64 flex-shrink-0 bg-white/5 rounded-xl border border-white/10 flex flex-col overflow-hidden max-h-[25vh] md:max-h-full">
           <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-1.5">
               <Users className="h-3.5 w-3.5 text-white/50" />
