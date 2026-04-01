@@ -13,7 +13,7 @@ const STEPS = [
   { id: "front", label: "Lihat ke depan", icon: "😐" },
   { id: "left", label: "Miringkan ke kiri", icon: "😏" },
   { id: "right", label: "Miringkan ke kanan", icon: "😏" },
-  { id: "blink", label: "Kedipkan mata", icon: "😉" },
+  { id: "blink", label: "Tutup mata sebentar", icon: "😌" },
 ];
 
 // Eye Aspect Ratio for blink detection
@@ -74,6 +74,9 @@ export default function FaceSetup() {
   const blinkDetectedRef = useRef(false);
   const capturedRef = useRef(new Set());
   const earHistoryRef = useRef([]);
+  const eyesClosedFramesRef = useRef(0);
+  const blinkStepStartRef = useRef(0);
+  const [showBlinkFallback, setShowBlinkFallback] = useState(false);
 
   // Init: load models + check auth
   useEffect(() => {
@@ -110,6 +113,9 @@ export default function FaceSetup() {
     capturedRef.current = new Set();
     blinkDetectedRef.current = false;
     earHistoryRef.current = [];
+    eyesClosedFramesRef.current = 0;
+    blinkStepStartRef.current = 0;
+    setShowBlinkFallback(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
       streamRef.current = stream;
@@ -156,18 +162,37 @@ export default function FaceSetup() {
         const leftEye = landmarks.getLeftEye();
         const rightEye = landmarks.getRightEye();
         const ear = (getEAR(leftEye) + getEAR(rightEye)) / 2;
-        // Adaptive blink detection: compare against running baseline
         earHistoryRef.current.push(ear);
-        if (earHistoryRef.current.length > 20) earHistoryRef.current.shift();
-        const baseline = earHistoryRef.current.length > 5
-          ? earHistoryRef.current.slice(0, -3).reduce((a, b) => a + b, 0) / (earHistoryRef.current.length - 3)
-          : 0.3;
-        const isBlinking = ear < baseline * 0.60 && ear < 0.24;
-        if (isBlinking && !blinkDetectedRef.current) {
+        if (earHistoryRef.current.length > 30) earHistoryRef.current.shift();
+
+        // Start timer for fallback button
+        if (!blinkStepStartRef.current) blinkStepStartRef.current = Date.now();
+        if (Date.now() - blinkStepStartRef.current > 8000) setShowBlinkFallback(true);
+
+        // Method 1: Close eyes for ~3 consecutive low-EAR frames
+        const isEyesClosed = ear < 0.23;
+        if (isEyesClosed) eyesClosedFramesRef.current++;
+        else eyesClosedFramesRef.current = 0;
+
+        if (eyesClosedFramesRef.current >= 3 && !blinkDetectedRef.current) {
           blinkDetectedRef.current = true;
           playBeep();
           captureFrame(video, descriptor);
           advanceStep();
+          return;
+        }
+
+        // Method 2: Detect drop from baseline (adaptive)
+        if (earHistoryRef.current.length > 8) {
+          const sorted = [...earHistoryRef.current].sort((a, b) => b - a);
+          const topAvg = (sorted[0] + sorted[1] + sorted[2]) / 3; // avg of 3 highest
+          if (ear < topAvg * 0.65 && !blinkDetectedRef.current) {
+            blinkDetectedRef.current = true;
+            playBeep();
+            captureFrame(video, descriptor);
+            advanceStep();
+            return;
+          }
         }
         lastEarRef.current = ear;
       } else {
@@ -373,11 +398,31 @@ export default function FaceSetup() {
                         <p className="text-3xl mb-1">{STEPS[currentStep].icon}</p>
                         <p className="font-bold text-white text-base">{STEPS[currentStep].label}</p>
                         <p className="text-white/60 text-xs mt-1">
-                          {STEPS[currentStep].id === "blink" ? "Kedipkan mata kamu 1 kali" :
+                          {STEPS[currentStep].id === "blink" ? "Tutup kedua mata selama 1 detik, lalu buka" :
                            STEPS[currentStep].id === "front" ? "Pastikan wajah terlihat jelas di dalam oval" :
                            STEPS[currentStep].id === "left" ? "\u2190 Miringkan kepala sedikit ke kiri" :
                            "\u2192 Miringkan kepala sedikit ke kanan"}
                         </p>
+                        {showBlinkFallback && STEPS[currentStep]?.id === "blink" && (
+                          <button onClick={() => {
+                            if (!blinkDetectedRef.current) {
+                              blinkDetectedRef.current = true;
+                              playBeep();
+                              if (videoRef.current) {
+                                const c = document.createElement("canvas");
+                                c.width = videoRef.current.videoWidth; c.height = videoRef.current.videoHeight;
+                                const cx = c.getContext("2d"); cx.translate(c.width, 0); cx.scale(-1, 1);
+                                cx.drawImage(videoRef.current, 0, 0);
+                                photosRef.current = [...photosRef.current, c.toDataURL("image/jpeg", 0.8)];
+                                setPhotos(photosRef.current);
+                              }
+                              advanceStep();
+                            }
+                          }}
+                            className="mt-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white text-xs font-medium transition-colors">
+                            Tidak bisa kedip? Tap di sini
+                          </button>
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -424,7 +469,7 @@ export default function FaceSetup() {
                   <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah depan ✓</div>
                   <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah kiri ✓</div>
                   <div className="flex items-center gap-2 text-emerald-600"><CheckCircle className="h-4 w-4" /> Wajah kanan ✓</div>
-                  <div className="flex items-center gap-2 text-emerald-600"><Eye className="h-4 w-4" /> Liveness check ✓</div>
+                  <div className="flex items-center gap-2 text-emerald-600"><Eye className="h-4 w-4" /> Liveness verified ✓</div>
                 </div>
                 <p className="text-xs text-muted-foreground">Sekarang kamu bisa absen otomatis lewat kamera kiosk.</p>
               </Card>
