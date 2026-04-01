@@ -16,31 +16,52 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   /* =========================
-   * INIT AUTH (1x only)
+   * INIT AUTH + LISTEN CHANGES
    * ========================= */
   useEffect(() => {
-    initAuth();
+    // 1) Check existing session
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session) {
+        try {
+          const rebuiltUser = await buildFullUser(data.session.user.id);
+          setUser(rebuiltUser);
+          localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
+        } catch { setUser(null); }
+      } else {
+        // Try cached user while session refreshes
+        const cached = localStorage.getItem("currentUser");
+        if (cached) setUser(JSON.parse(cached));
+        else setUser(null);
+      }
+      setLoading(false);
+    });
+
+    // 2) Listen for auth changes (login, logout, token refresh, new tab)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        try {
+          const rebuiltUser = await buildFullUser(session.user.id);
+          setUser(rebuiltUser);
+          localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
+        } catch {}
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
+        localStorage.removeItem("currentUser");
+      } else if (event === "TOKEN_REFRESHED" && session) {
+        // Session refreshed, user stays logged in
+        if (!user) {
+          try {
+            const rebuiltUser = await buildFullUser(session.user.id);
+            setUser(rebuiltUser);
+            localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
+          } catch {}
+        }
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
-
- const initAuth = async () => {
-  try {
-    const { data } = await supabase.auth.getSession();
-
-    if (!data.session) {
-      localStorage.removeItem("currentUser");
-      setUser(null);
-      return;
-    }
-
-    const rebuiltUser = await buildFullUser(data.session.user.id);
-    setUser(rebuiltUser);
-    localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
-  } catch (err) {
-    setUser(null);
-  } finally {
-    setLoading(false);
-  }
-};
 
 
   /* =========================
