@@ -19,45 +19,43 @@ export const AuthProvider = ({ children }) => {
    * INIT AUTH + LISTEN CHANGES
    * ========================= */
   useEffect(() => {
-    // 1) Check existing session
+    // 1) INSTANT: restore cached user (prevents redirect to login on refresh)
+    const cached = localStorage.getItem("currentUser");
+    if (cached) {
+      try { setUser(JSON.parse(cached)); } catch {}
+    }
+
+    // 2) ASYNC: verify session with Supabase
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session) {
         try {
           const rebuiltUser = await buildFullUser(data.session.user.id);
           setUser(rebuiltUser);
           localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
-        } catch { setUser(null); }
-      } else {
-        // Try cached user while session refreshes
-        const cached = localStorage.getItem("currentUser");
-        if (cached) setUser(JSON.parse(cached));
-        else setUser(null);
+        } catch {
+          // buildFullUser failed but session exists - keep cached user
+        }
+      } else if (!cached) {
+        // No session AND no cache - truly not logged in
+        setUser(null);
       }
       setLoading(false);
     });
 
-    // 2) Listen for auth changes (login, logout, token refresh, new tab)
+    // 3) Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "SIGNED_IN" && session) {
+      if (event === "SIGNED_OUT") {
+        setUser(null);
+        localStorage.removeItem("currentUser");
+        setLoading(false);
+      } else if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && session) {
         try {
           const rebuiltUser = await buildFullUser(session.user.id);
           setUser(rebuiltUser);
           localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
         } catch {}
-      } else if (event === "SIGNED_OUT") {
-        setUser(null);
-        localStorage.removeItem("currentUser");
-      } else if (event === "TOKEN_REFRESHED" && session) {
-        // Session refreshed, user stays logged in
-        if (!user) {
-          try {
-            const rebuiltUser = await buildFullUser(session.user.id);
-            setUser(rebuiltUser);
-            localStorage.setItem("currentUser", JSON.stringify(rebuiltUser));
-          } catch {}
-        }
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
