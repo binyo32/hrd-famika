@@ -160,11 +160,21 @@ export default function KioskAttendance() {
 
   const loadTodayLog = async () => {
     const today = new Date().toISOString().split("T")[0];
-    const { data } = await supabase.from("attendance_records").select("employee_id, check_in_time").eq("attendance_date", today).order("check_in_time", { ascending: false }).limit(50);
-    if (data) {
-      setTodayLog(data);
-      checkedInRef.current = new Set(data.map(d => d.employee_id));
-    }
+    // Load ALL employee IDs who checked in today (for duplicate prevention)
+    const { data: allCheckins } = await supabase
+      .from("attendance_records")
+      .select("employee_id")
+      .eq("attendance_date", today);
+    checkedInRef.current = new Set(allCheckins?.map(d => d.employee_id) || []);
+
+    // Load only recent 20 for display sidebar
+    const { data: recentCheckins } = await supabase
+      .from("attendance_records")
+      .select("employee_id, check_in_time")
+      .eq("attendance_date", today)
+      .order("check_in_time", { ascending: false })
+      .limit(20);
+    setTodayLog(recentCheckins || []);
   };
 
   const runDetection = async () => {
