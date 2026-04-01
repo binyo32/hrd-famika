@@ -10,6 +10,7 @@ import {
   Trash2, MailOpen, Archive, FileText, AlertTriangle, Bell, Folder,
   ChevronDown, Star, Reply, Check, MoreVertical, Share2, Paperclip, Download,
   Bold, Italic, Underline, List, ListOrdered, Link2, Image, Plus, Volume2, GripVertical,
+  Sparkles,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
@@ -424,9 +425,78 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
   const [bcc, setBcc] = useState("");
   const [files, setFiles] = useState([]);
   const [draggingOver, setDraggingOver] = useState(false);
+  const [showAiPrompt, setShowAiPrompt] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
   const dragCountRef = useRef(0);
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const generateWithAi = async () => {
+    if (!aiPrompt.trim() || aiGenerating) return;
+    setAiGenerating(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const sysPrompt = `Kamu adalah asisten penulis email profesional untuk perusahaan PT Fajar Mitra Krida Abadi (Famika).
+Tulis email dalam bahasa Indonesia yang formal dan sopan. Langsung tulis isi email saja tanpa subject.
+Jangan tambahkan komentar atau penjelasan. Output HANYA isi email dalam format HTML sederhana (pakai <p>, <br>, <b>, <ul> jika perlu).`;
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: aiPrompt },
+          ],
+          model: "custom",
+        }),
+      });
+
+      if (!res.ok) throw new Error("AI error");
+
+      // Read SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let result = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
+        for (const line of lines) {
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(data);
+            const token = parsed.choices?.[0]?.delta?.content || parsed.token || "";
+            result += token;
+          } catch {}
+        }
+      }
+
+      // Insert into editor
+      if (editorRef.current && result.trim()) {
+        // Clean up: if result is plain text, wrap in paragraphs
+        let html = result.trim();
+        if (!html.includes("<p>") && !html.includes("<br>") && !html.includes("<div>")) {
+          html = html.split("\n\n").map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+        }
+        editorRef.current.innerHTML = html;
+      }
+
+      setShowAiPrompt(false);
+      setAiPrompt("");
+    } catch (e) {
+      console.error("AI generate error:", e);
+    }
+    setAiGenerating(false);
+  };
 
   // Set initial content for forward
   useEffect(() => {
@@ -582,7 +652,50 @@ function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forward
             <Paperclip className="h-4 w-4" />
           </button>
           <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} className="hidden" />
+          <div className="flex-1" />
+          <button onClick={() => setShowAiPrompt(!showAiPrompt)} title="Generate dengan AI"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              showAiPrompt ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" : "hover:bg-purple-50 dark:hover:bg-purple-900/20 text-muted-foreground hover:text-purple-600"
+            }`}>
+            <Sparkles className="h-3.5 w-3.5" /> AI
+          </button>
         </div>
+
+        {/* AI Prompt */}
+        <AnimatePresence>
+          {showAiPrompt && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden border-b">
+              <div className="px-4 py-3 bg-gradient-to-r from-purple-500/5 to-pink-500/5 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                  <p className="text-xs font-medium text-purple-700 dark:text-purple-300">Apa yang ingin ditulis AI?</p>
+                </div>
+                <textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generateWithAi(); } }}
+                  placeholder="Contoh: buatkan email undangan meeting hari jumat jam 2 siang untuk review project Q2..."
+                  rows={2}
+                  className="w-full text-sm px-3 py-2 rounded-lg border bg-card resize-none outline-none focus:ring-1 focus:ring-purple-400"
+                  disabled={aiGenerating}
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] text-muted-foreground">Model: Qwen Local &middot; Enter untuk generate</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setShowAiPrompt(false); setAiPrompt(""); }}
+                      className="px-3 py-1.5 text-xs rounded-lg hover:bg-muted text-muted-foreground">Batal</button>
+                    <button onClick={generateWithAi} disabled={!aiPrompt.trim() || aiGenerating}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium disabled:opacity-50">
+                      {aiGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {aiGenerating ? "Generating..." : "Generate"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Rich Text Editor */}
         <div className="px-4 max-h-[40vh] overflow-y-auto">
