@@ -33,9 +33,9 @@ function getHeadPose(landmarks) {
   const faceRight = jaw[16];
   const faceWidth = faceRight.x - faceLeft.x;
   const nosePosRatio = (noseTip.x - faceLeft.x) / faceWidth;
-  // 0.5 = centered, <0.42 = looking right (from camera), >0.58 = looking left
-  if (nosePosRatio < 0.40) return "right";
-  if (nosePosRatio > 0.60) return "left";
+  // 0.5 = centered, lebih longgar supaya mudah terdeteksi
+  if (nosePosRatio < 0.44) return "right";
+  if (nosePosRatio > 0.56) return "left";
   return "front";
 }
 
@@ -352,6 +352,23 @@ export default function FaceSetup() {
                     </div>
                   </div>
 
+                  {/* Instruction overlay - INSIDE camera */}
+                  <AnimatePresence mode="wait">
+                    {STEPS[currentStep] && (
+                      <motion.div key={currentStep} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                        className="absolute bottom-16 left-4 right-4 bg-black/70 backdrop-blur-md rounded-xl p-3 text-center border border-white/10">
+                        <p className="text-3xl mb-1">{STEPS[currentStep].icon}</p>
+                        <p className="font-bold text-white text-base">{STEPS[currentStep].label}</p>
+                        <p className="text-white/60 text-xs mt-1">
+                          {STEPS[currentStep].id === "blink" ? "Kedipkan mata kamu 1 kali" :
+                           STEPS[currentStep].id === "front" ? "Pastikan wajah terlihat jelas di dalam oval" :
+                           STEPS[currentStep].id === "left" ? "\u2190 Miringkan kepala sedikit ke kiri" :
+                           "\u2192 Miringkan kepala sedikit ke kanan"}
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   {/* Captured thumbnails */}
                   {photos.length > 0 && (
                     <div className="absolute bottom-3 left-3 flex gap-1.5">
@@ -362,22 +379,6 @@ export default function FaceSetup() {
                     </div>
                   )}
                 </div>
-
-                {/* Current instruction */}
-                <motion.div key={currentStep} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
-                  className="p-4 text-center">
-                  {STEPS[currentStep] && (
-                    <>
-                      <p className="text-2xl mb-1">{STEPS[currentStep].icon}</p>
-                      <p className="font-semibold text-sm">{STEPS[currentStep].label}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {STEPS[currentStep].id === "blink" ? "Kedipkan mata kamu 1 kali" :
-                         STEPS[currentStep].id === "front" ? "Pastikan wajah terlihat jelas" :
-                         `Miringkan kepala perlahan ke ${STEPS[currentStep].id === "left" ? "kiri" : "kanan"}`}
-                      </p>
-                    </>
-                  )}
-                </motion.div>
               </Card>
             </motion.div>
           )}
