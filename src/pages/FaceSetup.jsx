@@ -192,8 +192,8 @@ export default function FaceSetup() {
     if (runningRef.current) requestAnimationFrame(detectLoop);
   };
 
-  const captureAndAdvance = async (video) => {
-    // Capture photo
+  const captureAndAdvance = (video) => {
+    // Capture photo only (fast - no descriptor extraction here)
     const c = document.createElement("canvas");
     c.width = video.videoWidth; c.height = video.videoHeight;
     const cx = c.getContext("2d");
@@ -203,19 +203,7 @@ export default function FaceSetup() {
     photosRef.current = [...photosRef.current, photoUrl];
     setPhotos([...photosRef.current]);
 
-    // Extract face descriptor via face-api.js (one-time per capture)
-    if (faceapiReadyRef.current) {
-      try {
-        const img = await faceapi.bufferToImage(c);
-        const det = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-        if (det) {
-          descriptorsRef.current = [...descriptorsRef.current, Array.from(det.descriptor)];
-          setDescriptors([...descriptorsRef.current]);
-        }
-      } catch {}
-    }
-
-    // Advance step
+    // Advance step immediately (no waiting)
     const si = stepRef.current;
     setCompletedSteps(prev => [...prev, STEPS[si].id]);
     const next = si + 1;
@@ -228,18 +216,34 @@ export default function FaceSetup() {
     if (next >= STEPS.length) {
       runningRef.current = false;
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      setTimeout(() => setPhase("saving"), 300);
+      setTimeout(() => setPhase("saving"), 200);
     }
   };
 
-  // Save
+  const [saveProgress, setSaveProgress] = useState("");
+
+  // Save: extract descriptors + upload photos + save to DB
   useEffect(() => {
     if (phase !== "saving" || !employee) return;
     const savedPhotos = photosRef.current;
-    const savedDesc = descriptorsRef.current;
-    if (savedDesc.length < 1) return; // Need at least 1 descriptor
+    if (!savedPhotos.length) return;
     (async () => {
       try {
+        // Step 1: Extract face descriptors from captured photos
+        setSaveProgress("Menganalisis wajah...");
+        const descs = [];
+        for (let i = 0; i < savedPhotos.length; i++) {
+          setSaveProgress(`Menganalisis foto ${i + 1}/${savedPhotos.length}...`);
+          try {
+            const img = await faceapi.bufferToImage(await (await fetch(savedPhotos[i])).blob());
+            const det = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+            if (det) descs.push(Array.from(det.descriptor));
+          } catch {}
+        }
+        if (!descs.length) { setErrorMsg("Tidak bisa mengekstrak data wajah. Coba lagi."); setPhase("error"); return; }
+
+        // Step 2: Upload photos
+        setSaveProgress("Mengunggah foto...");
         const photoPaths = [];
         for (let i = 0; i < savedPhotos.length; i++) {
           const blob = await (await fetch(savedPhotos[i])).blob();
@@ -247,8 +251,11 @@ export default function FaceSetup() {
           await supabase.storage.from("photo.attendance").upload(path, blob, { contentType: "image/jpeg" });
           photoPaths.push(path);
         }
+
+        // Step 3: Save to database
+        setSaveProgress("Menyimpan data...");
         const { error } = await supabase.from("employee_face_descriptors").insert({
-          employee_id: employee.id, descriptors: savedDesc, photos: photoPaths,
+          employee_id: employee.id, descriptors: descs, photos: photoPaths,
         });
         if (error) throw error;
         setPhase("done");
@@ -407,9 +414,22 @@ export default function FaceSetup() {
           )}
 
           {phase === "saving" && (
-            <motion.div key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">Menyimpan data wajah...</p>
+            <motion.div key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <Card className="p-8 text-center space-y-4">
+                <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
+                <div>
+                  <p className="font-semibold text-sm">Memproses...</p>
+                  <p className="text-xs text-muted-foreground mt-1">{saveProgress}</p>
+                </div>
+                {photos.length > 0 && (
+                  <div className="flex justify-center gap-2">
+                    {photos.map((p, i) => (
+                      <img key={i} src={p} className="h-12 w-12 rounded-lg object-cover opacity-60" />
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground">Ini mungkin memerlukan beberapa detik...</p>
+              </Card>
             </motion.div>
           )}
 
