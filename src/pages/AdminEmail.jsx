@@ -723,7 +723,7 @@ Jangan tambahkan komentar atau penjelasan. Output HANYA isi email dalam format H
                       className="w-full text-sm px-3 py-2 rounded-lg border bg-card resize-none outline-none focus:ring-1 focus:ring-purple-400"
                     />
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] text-muted-foreground">Model: Qwen Local &middot; Enter untuk generate</p>
+                      <p className="text-[10px] text-muted-foreground">AI can make mistakes &middot; Enter untuk generate</p>
                       <div className="flex gap-2">
                         <button onClick={() => { setShowAiPrompt(false); setAiPrompt(""); }}
                           className="px-3 py-1.5 text-xs rounded-lg hover:bg-muted text-muted-foreground">Batal</button>
