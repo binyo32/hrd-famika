@@ -19,6 +19,7 @@ const EMAIL_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/email-proxy`
 /* ─── Folder Config ─── */
 
 const FOLDER_CONFIG = {
+  "ALL":           { label: "All Mail", icon: Mail,            order: -1, color: "text-indigo-500" },
   "INBOX":         { label: "Inbox",    icon: Inbox,           order: 0, color: "text-blue-500" },
   "INBOX.Sent":    { label: "Sent",     icon: Send,            order: 1, color: "text-emerald-500" },
   "Sent":          { label: "Sent",     icon: Send,            order: 1, color: "text-emerald-500" },
@@ -854,6 +855,7 @@ function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread,
 /* ─── Folder Sidebar ─── */
 
 const DEFAULT_FOLDERS = [
+  { name: "ALL", total: 0, unseen: 0 },
   { name: "INBOX", total: 0, unseen: 0 },
   { name: "INBOX.Sent", total: 0, unseen: 0 },
   { name: "INBOX.Drafts", total: 0, unseen: 0 },
@@ -1089,16 +1091,30 @@ export default function AdminEmail() {
 
   useEffect(() => { if (config) { loadFolders(); loadInbox(); } }, [config]); // eslint-disable-line
 
-  // Request notification permission + load contacts
+  // Request notification permission + load contacts (employees + inbox senders)
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
     (async () => {
       try {
-        const { data } = await supabase.from("employees").select("name, email").not("email", "is", null).neq("email", "").order("name").limit(500);
-        if (data) setContacts(data.filter((c) => c.email));
+        // 1) Employees
+        const { data: empData } = await supabase.from("employees").select("name, email").not("email", "is", null).neq("email", "").order("name").limit(500);
+        const contactMap = new Map();
+        (empData || []).forEach((c) => { if (c.email) contactMap.set(c.email.toLowerCase(), { name: c.name, email: c.email }); });
+
+        // 2) Collect senders from inbox (recent emails)
+        try {
+          const r = await api("inbox", { folder: "INBOX", page: 1, perPage: 50 });
+          (r.messages || []).forEach((m) => {
+            if (m.fromEmail && !contactMap.has(m.fromEmail.toLowerCase())) {
+              contactMap.set(m.fromEmail.toLowerCase(), { name: m.from || m.fromEmail, email: m.fromEmail });
+            }
+          });
+        } catch {}
+
+        setContacts(Array.from(contactMap.values()));
       } catch {}
     })();
-  }, []);
+  }, [api]);
   useEffect(() => { if (config) { prevTotalRef.current = 0; setNewMailCount(0); setSelectedUids(new Set()); loadInbox(1); } }, [folder, searchQuery]); // eslint-disable-line
 
   // Auto-refresh 30s

@@ -264,6 +264,11 @@ async function handleFolders(p) {
         } catch { folders.push({ name, total: 0, unseen: 0 }); }
       }
     }
+    // Add "ALL" virtual folder with totals
+    const allTotal = folders.reduce((s, f) => s + f.total, 0);
+    const allUnseen = folders.reduce((s, f) => s + f.unseen, 0);
+    folders.unshift({ name: "ALL", total: allTotal, unseen: allUnseen });
+
     await imap.cmd("LOGOUT"); imap.close();
     return { folders };
   } catch (e) { imap.close(); throw e; }
@@ -271,6 +276,40 @@ async function handleFolders(p) {
 
 async function handleInbox(p) {
   const folder = p.folder || "INBOX";
+
+  // ALL MAIL: fetch from all folders, merge and sort by date
+  if (folder === "ALL") {
+    const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
+    try {
+      const lr = await imap.cmd('LIST "" "*"');
+      const folderNames = [];
+      for (const line of lr.split("\r\n")) {
+        const m = line.match(/\* LIST \(([^)]*)\) "([^"]*)" (.+)/);
+        if (m && !m[1].includes("\\Noselect")) folderNames.push(m[3].replace(/^"(.*)"$/, "$1"));
+      }
+      let allMsgs = [];
+      for (const fn of folderNames) {
+        try {
+          const sel = await imap.cmd(`SELECT "${fn}"`);
+          const total = parseInt(sel.match(/(\d+) EXISTS/)?.[1] || "0");
+          if (!total) continue;
+          const end = total, start = Math.max(1, total - 19); // last 20 per folder
+          const f = await imap.cmd(`FETCH ${start}:${end} (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])`);
+          const msgs = parseFetchBlocks(f);
+          msgs.forEach(m => { m.folder = fn; });
+          allMsgs.push(...msgs);
+        } catch {}
+      }
+      await imap.cmd("LOGOUT"); imap.close();
+      // Sort by date descending
+      allMsgs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      const pp = p.perPage || 20, pg = p.page || 1;
+      const start = (pg - 1) * pp;
+      return { messages: allMsgs.slice(start, start + pp), total: allMsgs.length, page: pg, perPage: pp };
+    } catch (e) { imap.close(); throw e; }
+  }
+
+  // Single folder
   const imap = await imapConnect(p.imap_server, p.imap_port, p.email, p.password);
   try {
     const sel = await imap.cmd(`SELECT "${folder}"`);
