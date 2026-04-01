@@ -356,23 +356,104 @@ export default function FaceSetup() {
                   <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-[4/3] object-cover scale-x-[-1]" />
                   <canvas ref={canvasRef} className="absolute inset-0 w-full h-full scale-x-[-1] pointer-events-none" />
 
-                  {/* Guide oval */}
+                  {/* Biometric scanning overlay */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className={`w-44 h-56 border-[3px] rounded-[50%] transition-colors duration-300 ${faceDetected ? "border-emerald-400/70" : "border-white/30"}`} />
+                    {/* Scanning ring */}
+                    <svg width="220" height="270" viewBox="0 0 220 270" className="absolute">
+                      {/* Outer glow */}
+                      <ellipse cx="110" cy="135" rx="95" ry="120" fill="none"
+                        stroke={faceDetected ? "#22c55e" : "#ffffff"} strokeWidth="1" opacity="0.15" />
+                      {/* Main oval */}
+                      <ellipse cx="110" cy="135" rx="88" ry="112" fill="none"
+                        stroke={faceDetected ? "#22c55e" : "#ffffff"} strokeWidth="2.5" opacity={faceDetected ? 0.8 : 0.3}
+                        strokeDasharray="8 4" className="transition-all duration-300" />
+                      {/* Progress arc */}
+                      <ellipse cx="110" cy="135" rx="95" ry="120" fill="none"
+                        stroke="#22c55e" strokeWidth="3" opacity="0.9"
+                        strokeDasharray={`${completedSteps.length * 188} 752`}
+                        strokeDashoffset="0" strokeLinecap="round"
+                        className="transition-all duration-700" />
+                      {/* Corner brackets */}
+                      <path d="M30,50 L30,30 L55,30" fill="none" stroke="#22c55e" strokeWidth="2" opacity="0.6" />
+                      <path d="M190,50 L190,30 L165,30" fill="none" stroke="#22c55e" strokeWidth="2" opacity="0.6" />
+                      <path d="M30,220 L30,240 L55,240" fill="none" stroke="#22c55e" strokeWidth="2" opacity="0.6" />
+                      <path d="M190,220 L190,240 L165,240" fill="none" stroke="#22c55e" strokeWidth="2" opacity="0.6" />
+                      {/* Scanning line animation */}
+                      {faceDetected && (
+                        <line x1="35" x2="185" stroke="#22c55e" strokeWidth="1.5" opacity="0.4">
+                          <animate attributeName="y1" values="40;230;40" dur="2s" repeatCount="indefinite" />
+                          <animate attributeName="y2" values="40;230;40" dur="2s" repeatCount="indefinite" />
+                        </line>
+                      )}
+                    </svg>
+
+                    {/* Animated head guide */}
+                    <AnimatePresence mode="wait">
+                      {STEPS[currentStep] && !faceDetected && (
+                        <motion.div key={`head-${currentStep}`}
+                          initial={{ opacity: 0 }} animate={{ opacity: 0.5 }} exit={{ opacity: 0 }}
+                          className="absolute">
+                          <motion.svg width="80" height="100" viewBox="0 0 80 100"
+                            animate={
+                              STEPS[currentStep].id === "left" ? { rotateY: [0, 35, 0], x: [0, -8, 0] } :
+                              STEPS[currentStep].id === "right" ? { rotateY: [0, -35, 0], x: [0, 8, 0] } :
+                              STEPS[currentStep].id === "blink" ? { scaleY: [1, 0.95, 1] } :
+                              {}
+                            }
+                            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                          >
+                            {/* Simple head outline */}
+                            <ellipse cx="40" cy="38" rx="28" ry="34" fill="none" stroke="white" strokeWidth="2" />
+                            {/* Eyes */}
+                            {STEPS[currentStep].id === "blink" ? (
+                              <>
+                                <motion.line x1="26" y1="35" x2="34" y2="35" stroke="white" strokeWidth="2" strokeLinecap="round"
+                                  animate={{ scaleY: [1, 0.1, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
+                                <motion.line x1="46" y1="35" x2="54" y2="35" stroke="white" strokeWidth="2" strokeLinecap="round"
+                                  animate={{ scaleY: [1, 0.1, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
+                              </>
+                            ) : (
+                              <>
+                                <ellipse cx="30" cy="35" rx="4" ry="3" fill="white" />
+                                <ellipse cx="50" cy="35" rx="4" ry="3" fill="white" />
+                              </>
+                            )}
+                            {/* Nose */}
+                            <path d="M40,40 L37,50 L43,50" fill="none" stroke="white" strokeWidth="1.5" />
+                            {/* Mouth */}
+                            <path d="M32,58 Q40,64 48,58" fill="none" stroke="white" strokeWidth="1.5" />
+                            {/* Neck */}
+                            <line x1="35" y1="72" x2="35" y2="95" stroke="white" strokeWidth="1.5" />
+                            <line x1="45" y1="72" x2="45" y2="95" stroke="white" strokeWidth="1.5" />
+                            {/* Direction arrow */}
+                            {STEPS[currentStep].id === "left" && (
+                              <motion.g animate={{ x: [0, -6, 0] }} transition={{ duration: 1, repeat: Infinity }}>
+                                <path d="M-5,38 L-15,38 M-12,33 L-17,38 L-12,43" stroke="#22c55e" strokeWidth="2" fill="none" />
+                              </motion.g>
+                            )}
+                            {STEPS[currentStep].id === "right" && (
+                              <motion.g animate={{ x: [0, 6, 0] }} transition={{ duration: 1, repeat: Infinity }}>
+                                <path d="M85,38 L95,38 M92,33 L97,38 L92,43" stroke="#22c55e" strokeWidth="2" fill="none" />
+                              </motion.g>
+                            )}
+                          </motion.svg>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
 
-                  {/* Status */}
+                  {/* Status badges */}
                   <div className="absolute top-2 left-2">
                     <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full backdrop-blur-md text-[11px] ${faceDetected ? "bg-emerald-500/80 text-white" : "bg-black/50 text-white/70"}`}>
                       <div className={`h-1.5 w-1.5 rounded-full ${faceDetected ? "bg-white animate-pulse" : "bg-red-400"}`} />
-                      {faceDetected ? "Wajah terdeteksi" : "Mencari wajah..."}
+                      {faceDetected ? "Terdeteksi" : "Mencari..."}
                     </div>
                   </div>
                   <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-md text-white text-[11px] px-2.5 py-1 rounded-full">
                     {completedSteps.length}/{STEPS.length}
                   </div>
 
-                  {/* Blink indicator bar */}
+                  {/* Blink progress bar */}
                   {STEPS[currentStep]?.id === "blink" && (
                     <div className="absolute top-10 left-3 right-3">
                       <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
@@ -381,17 +462,16 @@ export default function FaceSetup() {
                     </div>
                   )}
 
-                  {/* Instruction overlay */}
+                  {/* Instruction banner */}
                   <AnimatePresence mode="wait">
                     {STEPS[currentStep] && (
                       <motion.div key={currentStep} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                        className="absolute bottom-16 left-3 right-3 bg-black/70 backdrop-blur-md rounded-xl p-3 text-center border border-white/10">
-                        <p className="text-2xl mb-0.5">{STEPS[currentStep].icon}</p>
+                        className="absolute bottom-3 left-3 right-3 bg-black/70 backdrop-blur-md rounded-xl px-4 py-2.5 text-center border border-white/10">
                         <p className="font-bold text-white text-sm">{STEPS[currentStep].label}</p>
-                        <p className="text-white/60 text-xs mt-0.5">{STEPS[currentStep].hint}</p>
+                        <p className="text-white/50 text-[11px] mt-0.5">{STEPS[currentStep].hint}</p>
                         {showFallback && STEPS[currentStep]?.id === "blink" && (
                           <button onClick={() => captureAndAdvance(videoRef.current)}
-                            className="mt-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white text-xs font-medium transition-colors">
+                            className="mt-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-white text-[11px] font-medium transition-colors">
                             Tidak bisa? Tap di sini
                           </button>
                         )}
