@@ -360,7 +360,6 @@ function EmailSetup({ onDone, api }) {
 /* ─── Compose Dialog ─── */
 
 function ContactAutocomplete({ value, onChange, placeholder, contacts }) {
-  const [query, setQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef(null);
 
@@ -383,6 +382,24 @@ function ContactAutocomplete({ value, onChange, placeholder, contacts }) {
     inputRef.current?.focus();
   };
 
+  // Auto-append @fajarmitra.co.id for bare names (no @ and no comma pending)
+  const handleBlur = () => {
+    setTimeout(() => setShowSuggestions(false), 200);
+    if (!value.trim()) return;
+    const fixed = value.split(",").map((p) => {
+      const t = p.trim();
+      if (!t) return "";
+      // Already has @ — leave as-is
+      if (t.includes("@")) return t;
+      // Check if it matches a contact name → use their email
+      const match = contacts.find((c) => c.name?.toLowerCase() === t.toLowerCase());
+      if (match) return match.email;
+      // Otherwise append domain
+      return t.toLowerCase().replace(/\s+/g, "") + "@fajarmitra.co.id";
+    }).filter(Boolean).join(", ");
+    if (fixed !== value) onChange(fixed);
+  };
+
   return (
     <div className="relative flex-1">
       <Input
@@ -391,7 +408,7 @@ function ContactAutocomplete({ value, onChange, placeholder, contacts }) {
         value={value}
         onChange={(e) => { onChange(e.target.value); setShowSuggestions(true); }}
         onFocus={() => setShowSuggestions(true)}
-        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+        onBlur={handleBlur}
         className="text-sm h-9"
       />
       {showSuggestions && filtered.length > 0 && (
@@ -414,7 +431,7 @@ function ContactAutocomplete({ value, onChange, placeholder, contacts }) {
   );
 }
 
-function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forwardData, contacts }) {
+function ComposeDialog({ onClose, onSend, sending, sendSuccess, replyTo, forwardData, contacts, originalHtml }) {
   const [to, setTo] = useState(replyTo?.email || "");
   const [subject, setSubject] = useState(
     replyTo ? `Re: ${replyTo.subject?.replace(/^Re:\s*/i, "")}` :
@@ -498,12 +515,26 @@ Jangan tambahkan komentar atau penjelasan. Output HANYA isi email dalam format H
     setAiGenerating(false);
   };
 
-  // Set initial content for forward
+  // Set initial content for reply (quote original) and forward
   useEffect(() => {
-    if (editorRef.current && forwardData) {
-      editorRef.current.innerHTML = `<br><br><div style="border-left:2px solid #ccc;padding-left:12px;color:#666">---------- Forwarded message ----------<br>From: ${forwardData.from}<br>Date: ${forwardData.date}<br>Subject: ${forwardData.subject}<br><br>${forwardData.body.replace(/\n/g, "<br>")}</div>`;
+    if (!editorRef.current) return;
+    if (replyTo) {
+      const quotedBody = originalHtml
+        ? originalHtml
+        : (replyTo.body || "").replace(/\n/g, "<br>");
+      editorRef.current.innerHTML = `<br><br><div style="border-left:2px solid #ccc;padding-left:12px;color:#666">Pada ${replyTo.date || ""}, ${replyTo.from || replyTo.email} menulis:<br><br>${quotedBody}</div>`;
+      // Place cursor at the top
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.setStart(editorRef.current, 0);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else if (forwardData) {
+      const fwdBody = forwardData.body.includes("<") ? forwardData.body : forwardData.body.replace(/\n/g, "<br>");
+      editorRef.current.innerHTML = `<br><br><div style="border-left:2px solid #ccc;padding-left:12px;color:#666">---------- Forwarded message ----------<br>From: ${forwardData.from}<br>Date: ${forwardData.date}<br>Subject: ${forwardData.subject}<br><br>${fwdBody}</div>`;
     }
-  }, [forwardData]);
+  }, [replyTo, forwardData, originalHtml]);
 
   const execCmd = (cmd, val = null) => {
     editorRef.current?.focus();
@@ -986,7 +1017,7 @@ function EmailViewer({ data, onBack, onReply, onForward, onDelete, onMarkUnread,
             <Reply className="h-3.5 w-3.5" /> Balas
           </Button>
           <Button variant="outline" size="sm" onClick={() => onForward({
-            subject, from: `${sender.name} <${sender.email}>`, date, body: text || ""
+            subject, from: `${sender.name} <${sender.email}>`, date, body: html || text || ""
           })} className="gap-1.5 rounded-lg shadow-sm">
             <Share2 className="h-3.5 w-3.5" /> Teruskan
           </Button>
@@ -1453,7 +1484,7 @@ export default function AdminEmail() {
 
   const handleSearch = (e) => { e.preventDefault(); if (searchInput.trim()) { setSearchQuery(searchInput.trim()); setPage(1); } };
   const clearSearch = () => { setSearchQuery(""); setSearchInput(""); setPage(1); };
-  const handleReply = (info) => { setReplyTo(info); setForwardData(null); setShowCompose(true); };
+  const handleReply = (info) => { setReplyTo({ ...info, body: readData?.text || "", from: readData?.from || info.email, date: readData?.date || "" }); setForwardData(null); setShowCompose(true); };
   const handleForward = (data) => { setForwardData(data); setReplyTo(null); setShowCompose(true); };
   const handleDisconnect = async () => { await api("delete-config"); setConfig(null); setInbox(null); setFolders([]); };
   const handleRefresh = () => { setNewMailCount(0); loadFolders(); loadInbox(page); };
@@ -1769,6 +1800,7 @@ export default function AdminEmail() {
             replyTo={replyTo}
             forwardData={forwardData}
             contacts={contacts}
+            originalHtml={readData?.html || ""}
           />
         )}
       </AnimatePresence>

@@ -154,7 +154,7 @@ function AppContent() {
           <Route
             path="/admin/email"
             element={
-              <ProtectedRoute requiredRoles={["Super Admin"]}>
+              <ProtectedRoute requiredRoles={["employee", "Admin", "Super Admin", "PM"]}>
                 <AdminEmail />
               </ProtectedRoute>
             }

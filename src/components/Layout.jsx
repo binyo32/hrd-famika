@@ -102,6 +102,7 @@ const getNavLinks = (user, activeRole, faceSetupEnabled = false) => {
       text: "Pengajuan Cuti / Dinas",
     },
     { to: "/employee/profile", icon: UserCircle, text: "Profil Saya" },
+    { to: "/admin/email", icon: Mail, text: "Email" },
   ];
 
   if (user.isPM) {
