@@ -53,6 +53,7 @@ const getNavLinks = (user, activeRole, faceSetupEnabled = false) => {
         icon: Fingerprint,
         text: "Manajemen Absensi",
       },
+      { to: "/admin/email", icon: Mail, text: "Email" },
     ];
   }
 
