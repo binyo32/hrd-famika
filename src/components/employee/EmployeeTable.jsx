@@ -105,6 +105,7 @@ const EmployeeTable = ({
                     {visibleColumns.age && <SortableHeader label="Usia" columnKey="age" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={onSort} />}
                     {visibleColumns.position && <SortableHeader label="Jabatan" columnKey="position" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={onSort} />}
                     {visibleColumns.division && <SortableHeader label="Divisi" columnKey="division" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={onSort} />}
+                    {visibleColumns.workLocation && <SortableHeader label="Lokasi Kerja" columnKey="workLocation" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={onSort} />}
                     {visibleColumns.workDurationYears && <SortableHeader label="Masa Kerja" columnKey="workDurationYears" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={onSort} />}
                     {visibleColumns.status && <SortableHeader label="Status Karyawan" columnKey="status" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={onSort} />}
                     {visibleColumns.activeStatus && <SortableHeader label="Status Aktif" columnKey="activeStatus" currentSortKey={sortKey} currentSortOrder={sortOrder} onSort={onSort} />}
@@ -138,6 +139,7 @@ const EmployeeTable = ({
                       {visibleColumns.age && <TableCell>{employee.age !== null ? `${employee.age} tahun` : 'N/A'}</TableCell>}
                       {visibleColumns.position && <TableCell>{employee.position}</TableCell>}
                       {visibleColumns.division && <TableCell><Badge variant="outline">{employee.division}</Badge></TableCell>}
+                      {visibleColumns.workLocation && <TableCell>{employee.workLocation || '-'}</TableCell>}
                       {visibleColumns.workDurationYears && <TableCell>{employee.workDurationYears !== null ? `${employee.workDurationYears} thn, ${employee.workDurationMonths} bln, ${employee.workDurationDays} hr` : 'N/A'}</TableCell>}
                       {visibleColumns.status && <TableCell><Badge className={`${getStatusColor(employee.status)} text-white`}>{employee.status}</Badge></TableCell>}
                       {visibleColumns.activeStatus && <TableCell><Badge className={`${getActiveStatusColor(employee.activeStatus)} text-white`}><Activity className="h-3 w-3 mr-1" />{employee.activeStatus || 'N/A'}</Badge></TableCell>}
