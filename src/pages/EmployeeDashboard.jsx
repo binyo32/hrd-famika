@@ -220,13 +220,11 @@ const EmployeeDashboard = () => {
     setAllAnnouncements(newAllAnnouncements);
 
     try {
-      const announcementToUpdate = newAllAnnouncements.find(
-        (a) => a.id === announcementId,
-      );
-      const { error } = await supabase
-        .from("announcements")
-        .update({ liked_by: announcementToUpdate.liked_by })
-        .eq("id", announcementId);
+      // Setelah RLS: UPDATE announcements admin-only. Like karyawan lewat RPC
+      // SECURITY DEFINER toggle_announcement_like (server toggle pakai auth.uid()).
+      const { error } = await supabase.rpc("toggle_announcement_like", {
+        p_announcement_id: announcementId,
+      });
 
       if (error) {
         setAllAnnouncements(originalAllAnnouncements);
